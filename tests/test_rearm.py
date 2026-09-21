@@ -210,3 +210,75 @@ async def test_an_instruction_to_act_does_not_open_the_read_loadout(monkeypatch,
         f"action_confirmed opened the read loadout: {result['loadout']}"
     )
     assert "any" not in model.calls, "a turn needing no lookup was forced into one"
+
+
+# --- the bound on tool rounds ----------------------------------------------
+
+class _NeverSatisfied(_FakeModel):
+    """A model that keeps calling tools forever, which is the failure being bounded.
+
+    Not hypothetical: on one S2 turn the real model made 38 tool calls, cycling the
+    same six tools six times over, before answering no better than the first round
+    would have.
+    """
+
+    def bind_tools(self, tools, tool_choice=None):
+        return _AlwaysCalls(self, tool_choice)
+
+    def with_structured_output(self, model, include_raw=False):
+        if model is TurnPlan:
+            return _Structured(
+                TurnPlan(current_intent="policy_question", requires_tools=True)
+            )
+        return _Structured(ConversationMemory(current_intent="x", important_facts=["y"]))
+
+
+class _AlwaysCalls:
+    def __init__(self, parent, tool_choice) -> None:
+        self.parent = parent
+        self.tool_choice = tool_choice
+
+    def invoke(self, messages):
+        self.parent.calls.append(self.tool_choice)
+        return AIMessage(
+            content="",
+            tool_calls=[{"name": "get_policy", "args": {"name": "equipment_policy"},
+                         "id": f"c{len(self.parent.calls)}"}],
+        )
+
+
+async def test_a_runaway_turn_is_stopped_and_still_answers(monkeypatch, tmp_path):
+    """The bound the specification asks for, proved against a model that never stops."""
+
+    from novaops import config
+
+    model = _NeverSatisfied()
+    monkeypatch.setattr(graph_module, "get_model", lambda **kw: model)
+
+    result = await _run(model, tmp_path)
+
+    tool_messages = [m for m in result["messages"] if type(m).__name__ == "ToolMessage"]
+    rounds = result.get("tool_rounds", 0)
+
+    assert rounds <= config.MAX_TOOL_ROUNDS, f"ran {rounds} rounds"
+    assert len(tool_messages) <= config.MAX_TOOL_ROUNDS, (
+        f"{len(tool_messages)} tool calls got through a bound of {config.MAX_TOOL_ROUNDS}"
+    )
+    # And it terminated rather than hitting the recursion limit.
+    assert result["messages"], "the turn produced nothing"
+
+
+async def test_the_final_pass_is_offered_no_tools(monkeypatch, tmp_path):
+    """Once the allowance is spent the model is not asked to restrain itself — it is
+    given nothing to call, and told to answer and name the gap."""
+
+    model = _NeverSatisfied()
+    monkeypatch.setattr(graph_module, "get_model", lambda **kw: model)
+
+    await _run(model, tmp_path)
+
+    # The unbound model's own `invoke` records None; a bound one records its tool_choice.
+    # The last call must have gone to the unbound model.
+    assert model.calls[-1] is None, (
+        f"the final pass still had tools bound: {model.calls}"
+    )

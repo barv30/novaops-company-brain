@@ -89,10 +89,13 @@ LOADOUTS: dict[str, list[str] | None] = {
     "benefits_question": ["search_handbook", "search_policies", "get_policy"],
     "career_question": ["search_handbook", "search_policies"],
     "employee_lookup": ["get_employee", "list_direct_reports", "search_hr_documents"],
+    # get_onboarding_checklist is listed first deliberately: it answers the whole
+    # question from records in one call, already cited and with blockers named. The
+    # narrower tools remain available for turns that genuinely want one fact.
     "onboarding_status": [
-        "get_employee", "list_onboarding_tasks", "search_hr_documents",
-        "check_asset_inventory", "check_software_subscription", "list_policies",
-        "get_policy", "search_policies",
+        "get_onboarding_checklist", "get_employee", "list_onboarding_tasks",
+        "search_hr_documents", "check_asset_inventory", "check_software_subscription",
+        "list_policies", "get_policy", "search_policies",
     ],
     "equipment_request": [
         "check_asset_inventory", "list_policies", "get_policy", "search_policies",
@@ -473,6 +476,18 @@ REARM_INSTRUCTION = (
     "entitlement, a current record state — is not quotable from the conversation above. "
     "Call a tool NOW and answer from its result. Do not answer from memory, from the "
     "user's own words, or from a snapshot taken earlier in this conversation."
+)
+
+
+#: Appended when a turn has used its allowance of tool rounds. It matters that this
+#: says what to do rather than only what is forbidden: a model told merely that it has
+#: no tools tends to apologise, where what is wanted is the best answer the evidence
+#: supports plus an honest statement of the gap.
+BOUNDED_INSTRUCTION = (
+    "\n\nYou have used this turn's allowance of lookups. Answer NOW from the evidence "
+    "already gathered. If something you wanted is still missing, say plainly what it is "
+    "and where it would be found — an answer that names its own gap is useful; another "
+    "search is not available."
 )
 
 

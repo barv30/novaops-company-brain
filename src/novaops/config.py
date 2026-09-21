@@ -73,11 +73,15 @@ AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 # 4. BEHAVIOR LIMITS ---------------------------------------------------------
 
-# Bounded retrieval refinement. When evidence is missing, allow at most this many
-# refined rounds and then answer with what is available, saying what is missing.
-# "Search again until something turns up" has no natural stopping point, and that is
-# where both latency and cost go.
-MAX_RETRIEVAL_REFINEMENTS = 1
+# Bounded retrieval refinement. A turn may call tools, look at the results, and refine
+# ONCE — then it must answer with what it has and say what is missing. "Search again
+# until something turns up" has no natural stopping point, and that is where both
+# latency and cost go.
+#
+# Not a theoretical limit. Unbounded, one S2 turn made 38 tool calls, cycling the same
+# six tools six times over, before producing an answer no better than the first round
+# would have given.
+MAX_TOOL_ROUNDS = 2
 
 # How many documents a single retrieval round returns before reranking.
 RETRIEVAL_TOP_K = int(os.environ.get("NOVAOPS_TOP_K", "8"))

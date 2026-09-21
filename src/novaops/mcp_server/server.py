@@ -43,6 +43,7 @@ from novaops.identity import Caller
 from novaops.mcp_server.context import resolve_caller
 from novaops.retrieval.filters import visible_ids
 from novaops.retrieval.store import FaissStore, SearchHit
+from novaops.workflows.onboarding import build_checklist
 
 mcp = FastMCP("novaops-company-brain", host=config.MCP_HOST, port=config.MCP_PORT)
 
@@ -356,6 +357,34 @@ def list_onboarding_tasks(employee_id: str, ctx: Context | None = None) -> list[
     with _db() as connection:
         resolve_caller(ctx, connection)
         return repositories.list_onboarding_tasks(connection, employee_id)
+
+
+@mcp.tool()
+def get_onboarding_checklist(employee_id: str, ctx: Context | None = None) -> dict:
+    """The complete, evidence-backed onboarding checklist for one joiner.
+
+    Call this for any question about what a joiner needs, what is outstanding, what is
+    blocked, or for a status summary about them. It answers all of those from one call,
+    and it is assembled from the records rather than composed by a model — so every item
+    carries the id of the row it came from, and a blocked item names its actual cause
+    rather than repeating the word "blocked".
+
+    Prefer it over assembling an answer yourself from `list_onboarding_tasks` plus
+    `check_asset_inventory` plus `check_software_subscription`: those give you three
+    partial views that you then have to reconcile, and reconciling them is where a
+    blocked item quietly becomes "in progress".
+
+    Returns items with `status`, `blocked_reason`, `owner_group`, `due_date` and
+    `citations`, plus `constraints_applied`, `unresolved`, and the joiner's start date.
+
+    Args:
+        employee_id: The joiner's id, e.g. 'E001'. Not a name — two employees are
+            called Maya, so a name does not identify a person.
+    """
+    with _db() as connection:
+        resolve_caller(ctx, connection)
+        checklist = build_checklist(connection, employee_id)
+    return checklist.model_dump(mode="json")
 
 
 @mcp.tool()

@@ -40,6 +40,7 @@ class AgentState(TypedDict, total=False):
     loadout: list[str]   # the tool names visible this turn
     rearmed: bool        # has the missed-lookup fallback already fired?
     force_tool: bool     # oblige the NEXT model call to use a tool; consumed by it
+    tool_rounds: int     # tool batches run this turn; bounds refinement
 
     # --- durable memory across a long session ------------------------------
     memory: dict         # ConversationMemory — named fields, not a summary string

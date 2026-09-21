@@ -34,7 +34,9 @@ from langchain_core.messages import (
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
+from novaops import config
 from novaops.agent.policy import (
+    BOUNDED_INSTRUCTION,
     REARM_INSTRUCTION,
     ConversationMemory,
     TurnPlan,
@@ -174,13 +176,21 @@ def build_graph(
             "gate_reason": decision.reason,
             "gate_released": decision.released,
             "force_tool": False,
+            "tool_rounds": 0,
         }
 
     # 4. MODEL --------------------------------------------------------------
     def call_model(state: AgentState) -> dict:
         plan = TurnPlan(**state["plan"])
         active = get_scope(state.get("scope", "maya"))
+        exhausted = state.get("tool_rounds", 0) >= config.MAX_TOOL_ROUNDS
+
         prompt = answer_prompt(active) + render_plan(plan)
+        if exhausted:
+            # Offer nothing and say why. Leaving tools bound and asking nicely does not
+            # stop a model that has decided to keep looking: unbounded, one turn cycled
+            # the same six tools six times over for 38 calls.
+            prompt += BOUNDED_INSTRUCTION
         if state.get("rearmed"):
             # The retry must differ in what the model is told, not only in what it is
             # offered — see REARM_INSTRUCTION.
@@ -193,8 +203,9 @@ def build_graph(
         # cleared by this call, because `rearmed` stays true for the rest of the turn:
         # leaving the force on would oblige a tool call after the tool results came
         # back, which loops model -> tools -> model until the recursion limit.
-        forced = bool(state.get("force_tool")) and bool(state["loadout"])
-        response = model_for(state["loadout"], force=forced).invoke(messages)
+        loadout = [] if exhausted else state["loadout"]
+        forced = bool(state.get("force_tool")) and bool(loadout)
+        response = model_for(loadout, force=forced).invoke(messages)
         return {"messages": [response], "force_tool": False}
 
     # 5. REARM — the model answered without the lookup it said it needed ----
@@ -242,7 +253,18 @@ def build_graph(
     graph.add_node("scope", scope)
     graph.add_node("model", call_model)
     graph.add_node("rearm", rearm)
-    graph.add_node("tools", ToolNode(tools))
+    tool_node = ToolNode(tools)
+
+    async def run_tools(state: AgentState) -> dict:
+        """Run the requested tools and count the round against this turn's allowance."""
+
+        result = await tool_node.ainvoke(state)
+        rounds = state.get("tool_rounds", 0) + 1
+        if isinstance(result, dict):
+            return {**result, "tool_rounds": rounds}
+        return {"messages": result, "tool_rounds": rounds}
+
+    graph.add_node("tools", run_tools)
 
     graph.add_conditional_edges(
         START,
