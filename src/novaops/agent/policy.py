@@ -558,6 +558,47 @@ TRUTHFULNESS_CORRECTION = (
 )
 
 
+def render_gate(state: dict) -> str:
+    """What the write gate decided, put in front of the model that has to explain it.
+
+    The gate already computes the answer to the hardest turn in the project. On `S8`
+    turn 4 — "GO AHEAD and file Rachel Stein's Webex access request" — it produces
+    "approval still outstanding on AR001: AP001 (E006, needed), AP002 (E011, needed)".
+    That names the existing request, both approvers and the true state.
+
+    It used to go only into state and the trace. So the model, asked to file and holding
+    no write tool, had to invent something to say: on some runs it wrote out a tool call
+    it had not made, on others it simply refused. Both were avoidable, because the
+    correct sentence had already been computed one node earlier and thrown away.
+    """
+
+    reason = (state.get("gate_reason") or "").strip()
+    if not reason:
+        return ""
+
+    released = state.get("gate_released") or []
+    if released:
+        return (
+            "\n\n--- WRITE AUTHORIZATION ---\n"
+            f"You MAY write this turn, using only: {', '.join(sorted(released))}.\n"
+            f"Because: {reason}\n"
+            "Reuse an existing record rather than creating a second one.\n"
+            "--- END WRITE AUTHORIZATION ---"
+        )
+
+    return (
+        "\n\n--- WRITE AUTHORIZATION ---\n"
+        "You may NOT write this turn. No record can be created, and nothing you say may "
+        "suggest one was.\n"
+        f"The reason, which is the substance of your answer if the user asked you to "
+        f"act: {reason}\n"
+        "If that names an existing request or approval, tell the user about it by id and "
+        "say what it is waiting on. An existing request that is pending is a far better "
+        "answer than either refusing or claiming to have filed something.\n"
+        "--- END WRITE AUTHORIZATION ---"
+    )
+
+
 def answer_prompt(scope) -> str:
     """The system prompt text for the answering model, in this scope's authority."""
 

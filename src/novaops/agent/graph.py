@@ -49,12 +49,17 @@ from novaops.agent.policy import (
     needs_distillation,
     planner_messages,
     read_tools,
+    render_gate,
     render_memory_for_answer,
     render_plan,
 )
 from novaops.agent.scopes import get_scope
 from novaops.agent.state import AgentState
-from novaops.agent.write_gate import GateDecision, release_writes
+from novaops.agent.write_gate import (
+    GateDecision,
+    pending_request_for,
+    release_writes,
+)
 from novaops.llm.client import get_model
 
 
@@ -172,10 +177,23 @@ def build_graph(
 
         connection = open_db()
         try:
+            # An application-supplied request id wins. Absent one, resolve it from the
+            # subject — a turn about Rachel's access is about AR001 whether or not
+            # anybody said so. Without this the gate reports "nothing to approve", which
+            # is true, useless, and leaves the model with nothing to tell the user.
+            # Only for a scope that could write. Maya is refused on authority alone, so
+            # resolving a request for her is work whose result is discarded — and it
+            # would mean a read-only scope touching the database to decide it may not
+            # write, which is the wrong order to check things in.
+            request_id = state.get("pending_request_id")
+            if active.writes_allowed and not request_id:
+                request_id = pending_request_for(
+                    connection, plan.subject_employee or state.get("caller_id")
+                )
             decision: GateDecision = release_writes(
                 scope=active,
                 intent=plan.current_intent,
-                request_id=state.get("pending_request_id"),
+                request_id=request_id,
                 connection=connection,
                 catalogue=catalogue,
             )
@@ -185,6 +203,7 @@ def build_graph(
         return {
             "loadout": sorted(set(loadout) | set(decision.released)),
             "rearmed": False,
+            "pending_request_id": request_id,
             "gate_reason": decision.reason,
             "gate_released": decision.released,
             "force_tool": False,
@@ -206,7 +225,12 @@ def build_graph(
         # current subject, because that was the only history it could see. Distillation
         # is supposed to replace the raw messages for the model that answers, not just
         # for the one that plans.
-        prompt = answer_prompt(active) + render_memory_for_answer(state) + render_plan(plan)
+        prompt = (
+            answer_prompt(active)
+            + render_memory_for_answer(state)
+            + render_plan(plan)
+            + render_gate(state)
+        )
         if exhausted:
             # Offer nothing and say why. Leaving tools bound and asking nicely does not
             # stop a model that has decided to keep looking: unbounded, one turn cycled

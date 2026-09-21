@@ -94,6 +94,31 @@ def approval_is_recorded(
     return True, ids, f"every approval on {request_id} is recorded as granted"
 
 
+def pending_request_for(
+    connection: sqlite3.Connection, employee_id: str | None
+) -> str | None:
+    """The live access request this employee already has, if any.
+
+    The gate needs a request to check approvals against, and requiring the caller to
+    name one means a turn that does not name one gets "nothing to approve" — which is
+    true and useless. Rachel Stein's `AR001` exists; a turn about her access is about
+    that request whether or not anybody said its id out loud.
+
+    Deterministic lookup, not a model inference: the employee id comes from the plan's
+    `subject_employee` or the caller, and the request is whatever the database says is
+    open for them. Returns None when there is none, which correctly leaves the gate shut.
+    """
+
+    if not employee_id:
+        return None
+    requests = [
+        request
+        for request in repositories.list_access_requests(connection, employee_id)
+        if request["status"] in repositories.OPEN_REQUEST_STATUSES
+    ]
+    return requests[0]["request_id"] if requests else None
+
+
 def release_writes(
     *,
     scope: Scope,

@@ -11,7 +11,7 @@ Lesson 12 (eval loop engineering), Lesson 13 (security and guardrails) or Lesson
 (packaging and deployment) stages — see
 [ADR-001](docs/DECISIONS.md#adr-001--build-the-required-path-only).
 
-> **Status: Phase 4 — Webex.** `W-I-03` answers correctly and changes no rows; `S8` 12/13.
+> **Status: Phase 4 — Webex.** `W-I-03` answers correctly and changes no rows; `S8` 13/13, 4/4 turns.
 > `S1` 11/11
 > checks. `S2` 37–41 of 43. `S9` 31–32 of 33, with
 > both permission traps holding every run. The ranges are real run-to-run variance in one
@@ -76,7 +76,8 @@ visible in the repository.
 | A human decision is recorded by application code, never a tool | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) `approve` · [ADR-014](docs/DECISIONS.md) | done |
 | The gate opens only once *every* approval is granted | [evals/test_approval_loop.py](evals/test_approval_loop.py) | done — AR001 needs AP001 and AP002 |
 | An approved write still reuses `AR001` rather than creating a row | [evals/test_approval_loop.py](evals/test_approval_loop.py) | done |
-| An answer never claims an action that did not happen | [src/novaops/agent/policy.py](src/novaops/agent/policy.py) `narrates_untaken_action` | partial — the guard catches narration; `S8` turn 4 still refuses on some runs |
+| An answer never claims an action that did not happen | [src/novaops/agent/policy.py](src/novaops/agent/policy.py) `narrates_untaken_action` | done |
+| The gate's refusal carries the answer, not just a log line | [src/novaops/agent/policy.py](src/novaops/agent/policy.py) `render_gate` | done — `S8` 13/13 |
 | An independent case cannot replay a previous run's history | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) `new_thread_id` / `expect_fresh` · [ADR-018](docs/DECISIONS.md) | done |
 | Spans named so a reader can follow classify → scope → tools → answer | [src/novaops/observability/tracing.py](src/novaops/observability/tracing.py) | done — verified by reading a trace back through the API |
 | Trace metadata carries caller, group, scope, tools, status, request id | [tracing.py](src/novaops/observability/tracing.py) `turn_span` | done |
