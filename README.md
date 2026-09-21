@@ -1,0 +1,116 @@
+# NovaOps — operational company brain
+
+An internal assistant over NovaOps' document corpus, operational database and governed
+actions. Built as the AI Engineer capstone against
+[PROJECT-DESCRIPTION.md](PROJECT-DESCRIPTION.md).
+
+**Scope: the required path.** Workflow 1 (Maya · HR and onboarding) and Workflow 2
+(Webex · IT operations) as two scopes on one agent, plus the Lesson 11 observability stage.
+Workflows 3 (Vendor) and 4 (Renewal) and the Lesson 12/14 stages are not attempted — see
+[ADR-001](docs/DECISIONS.md#adr-001--build-the-required-path-only).
+
+> **Status: Phase 0 — scaffold.** The claim-to-file map below is the build contract. Rows
+> marked *planned* are not yet implemented and say so; no row claims behavior that does not
+> exist. This table and the code move in the same commit.
+
+## Stack
+
+| Layer | Choice | Fixed or ours |
+| --- | --- | --- |
+| Model | AWS Bedrock, `us.amazon.nova-2-lite-v1:0` | fixed by the assessment |
+| Tracing | Langfuse | fixed |
+| Language | Python 3.12 | fixed |
+| Tools | MCP server boundary (`FastMCP`, streamable HTTP) | fixed |
+| Orchestration | LangGraph, extending the Lesson 10 stage-3 graph | ours — [ADR-002](docs/DECISIONS.md#adr-002--extend-the-lesson-10-stage-3-graph-rather-than-write-new-orchestration) |
+| Retrieval | FAISS behind a `DocumentStore` protocol; 102 docs → 472 chunks | ours — [ADR-003](docs/DECISIONS.md#adr-003--faiss-for-retrieval-behind-a-documentstore-interface), [ADR-009](docs/DECISIONS.md) |
+| Persistence | SQLite for business records and for the LangGraph checkpointer | ours — [ADR-007](docs/DECISIONS.md#adr-007--asyncsqlitesaver-for-checkpointing-from-the-start) |
+| Contracts | Pydantic, validated before return | ours |
+
+## Claim to file
+
+Every claim below points at the code that implements it. Nothing is asserted here that is not
+visible in the repository.
+
+### Required behavior
+
+| Claim | Implemented in | Status |
+| --- | --- | --- |
+| Caller identity and group are application inputs, never model inferences | `src/novaops/identity.py` | done |
+| A caller is a manager when some employee's `manager_id` is their id | `src/novaops/identity.py` · [ADR-005](docs/DECISIONS.md#adr-005--manager-is-derived-from-manager_id-not-from-user_group) | done |
+| The clock is pinned to 2026-07-01; nothing calls `date.today()` | `src/novaops/config.py` | done |
+| Typed returns, validated before they are returned | `src/novaops/contracts/` | done |
+| Every model call goes through one seam | `src/novaops/llm/client.py` | done |
+| `audience` survives ingest and is filtered at the retrieval layer | [src/novaops/retrieval/documents.py](src/novaops/retrieval/documents.py) | done |
+| `manager_playbook` never reaches a non-manager | [src/novaops/retrieval/filters.py](src/novaops/retrieval/filters.py) · [store.py](src/novaops/retrieval/store.py) · [ADR-010](docs/DECISIONS.md) | done |
+| Tools are served over an MCP boundary, not called from the graph | `src/novaops/mcp_server/` | planned — Phase 1 |
+| `classify → scope → gather evidence → answer`, one graph, two scopes | `src/novaops/agent/graph.py` | planned — Phase 2 |
+| Scoped tool visibility — not every tool on every call | `src/novaops/agent/scopes.py` | planned — Phase 2 |
+| A write is released only against a persisted approval, never `action_confirmed` | `src/novaops/agent/write_gate.py` · [ADR-006](docs/DECISIONS.md#adr-006--authorization-reads-a-persisted-approval-row-action_confirmed-only-controls-visibility) | planned — Phase 2 |
+| Maya writes nothing — enforced as a checked condition, not a folder boundary | `src/novaops/agent/write_gate.py` | planned — Phase 3 |
+| Every claim carries a citation | `src/novaops/contracts/common.py` | planned — Phase 3 |
+| Webex reported as blocked at 42-of-40 seats | `src/novaops/agent/scopes.py` | planned — Phase 3 |
+| Existing records reused, never duplicated | `src/novaops/db/` | planned — Phase 4 |
+| A pending approval survives the process being killed | `src/novaops/agent/graph.py` | planned — Phase 4 |
+| Spans named so a reader can follow classify → scope → tools → answer | `src/novaops/observability/` | planned — Phase 2 |
+
+### Evidence we wrote ourselves
+
+The golden dataset ships single-shot expectations. These checks are not in it and are ours —
+the spec asks for them under `evals/`.
+
+| Check | File | Status |
+| --- | --- | --- |
+| A turn-1 constraint still binds on turn 9 | `evals/test_constraint_carry.py` | planned — Phase 5 |
+| A closed branch stops driving tool choice | `evals/test_closed_branch.py` | planned — Phase 5 |
+| Replaying a request creates no second row | `evals/test_idempotency.py` | planned — Phase 5 |
+| A pending approval survives a restart | `evals/test_restart_survival.py` | planned — Phase 5 |
+
+## The data
+
+`novaops-enterprise-agent-dataset/` is read-only input. Two facts about it drive the design,
+both verified directly against the files rather than taken from prose:
+
+- **70 of 102 documents carry no `audience` field.** Absent means unrestricted, not deny —
+  [ADR-004](docs/DECISIONS.md#adr-004--audience-is-filtered-as-allow-by-default-within-the-restricted-collection).
+- **Three of the five people who manage someone are `UG_REGULAR`**, so the manager check
+  cannot come from `user_group` — [ADR-005](docs/DECISIONS.md#adr-005--manager-is-derived-from-manager_id-not-from-user_group).
+
+## Running it
+
+```bash
+python -m venv .venv
+source .venv/Scripts/activate        # PowerShell: .venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+cp .env.example .env                 # then fill in AWS and Langfuse credentials
+
+python -m scripts.reseed             # rebuild the business database from seed.sql
+python -m scripts.ingest             # build the FAISS index, preserving audience metadata
+python -m novaops.mcp_server         # serve the tools at http://127.0.0.1:9877/mcp
+
+pytest                               # unit and integration tests
+pytest evals/                        # the graded behavioral checks
+```
+
+Core logic is directly callable — nothing is reachable only through a UI.
+
+## Repository map
+
+| Path | What is in it |
+| --- | --- |
+| `src/novaops/` | the system |
+| `evals/` | behavioral checks, read as part of the submission |
+| `tests/` | unit and integration tests |
+| `docs/DECISIONS.md` | the decision record — every real choice and why |
+| `docs/course-brief/` | the original course-supplied README, preserved |
+| `CLAUDE.md` | instructions for coding agents working in this repository |
+| `SUBMISSION.md` | the submission form — repo, Langfuse project, trace index |
+| `novaops-enterprise-agent-dataset/` | the world (read-only) |
+| `PROJECT-DESCRIPTION.md`, `GOLDEN-DATASETS.json`, `EVALUATION-INPUTS.yaml` | course-supplied specification and evaluation material |
+
+## How this was built
+
+Spec-driven, with a coding agent under project-level control: [CLAUDE.md](CLAUDE.md) holds the
+invariants and conventions so behavior stays consistent across sessions, and
+[docs/DECISIONS.md](docs/DECISIONS.md) records every decision with the reasoning and the
+evidence that justified it. Architecture, the permission boundary, the write gate and the
+quality gates are ours; the agent accelerated the implementation.

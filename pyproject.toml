@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novaops"
+version = "0.1.0"
+description = "NovaOps operational company brain — AI Engineer capstone"
+requires-python = ">=3.12"
+dependencies = [
+    # Model seam — Bedrock, fixed by the assessment
+    "langchain-aws>=0.2",
+    "langchain-core>=0.3",
+    # Orchestration
+    "langgraph>=0.2",
+    "langgraph-checkpoint-sqlite>=2.0",   # AsyncSqliteSaver — durable approvals (ADR-007)
+    # Tools behind a server boundary, fixed by the assessment
+    "mcp>=1.2",
+    "langchain-mcp-adapters>=0.1",
+    # Retrieval (ADR-003)
+    "faiss-cpu>=1.8",
+    "langchain-community>=0.3",
+    # Tracing, fixed by the assessment
+    "langfuse>=3.0",
+    # Contracts and config
+    "pydantic>=2.9",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "evals"]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests", "evals", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "N"]
