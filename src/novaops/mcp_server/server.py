@@ -59,7 +59,7 @@ def _db() -> sqlite3.Connection:
 
 
 def _search(
-    ctx: Context,
+    ctx: Context | None,
     query: str,
     corpora: list[str] | None,
     k: int | None = None,
@@ -87,7 +87,9 @@ def _search(
     ]
 
 
-def _caller(ctx: Context) -> Caller:
+def _caller(ctx: Context | None) -> Caller:
+    """The caller behind this request. Anonymous when the session carries no identity."""
+
     with _db() as connection:
         return resolve_caller(ctx, connection)
 
@@ -95,7 +97,7 @@ def _caller(ctx: Context) -> Caller:
 # 1. DOCUMENTS ---------------------------------------------------------------
 
 @mcp.tool()
-def search_knowledge_base(query: str, ctx: Context) -> list[dict]:
+def search_knowledge_base(query: str, ctx: Context | None = None) -> list[dict]:
     """Search the NovaOps IT knowledge base for how-to and troubleshooting articles.
 
     Use for provisioning, login, VPN, MFA, password and licence questions — how a
@@ -108,7 +110,7 @@ def search_knowledge_base(query: str, ctx: Context) -> list[dict]:
 
 
 @mcp.tool()
-def search_policies(query: str, ctx: Context) -> list[dict]:
+def search_policies(query: str, ctx: Context | None = None) -> list[dict]:
     """Search NovaOps policies and internal memos for what the rules are.
 
     Searches both together on purpose: a memo may have changed a threshold a policy
@@ -122,7 +124,7 @@ def search_policies(query: str, ctx: Context) -> list[dict]:
 
 
 @mcp.tool()
-def search_hr_documents(query: str, ctx: Context) -> list[dict]:
+def search_hr_documents(query: str, ctx: Context | None = None) -> list[dict]:
     """Search employment documents — offer letters, onboarding summaries, addenda.
 
     Use for what was agreed about a specific person: the systems and equipment an offer
@@ -135,7 +137,7 @@ def search_hr_documents(query: str, ctx: Context) -> list[dict]:
 
 
 @mcp.tool()
-def search_handbook(query: str, ctx: Context) -> list[dict]:
+def search_handbook(query: str, ctx: Context | None = None) -> list[dict]:
     """Search the employee handbook and, for managers only, the manager playbook.
 
     Which of those two this searches is decided by who is asking, not by this argument.
@@ -150,7 +152,7 @@ def search_handbook(query: str, ctx: Context) -> list[dict]:
 
 
 @mcp.tool()
-def search_contracts(query: str, ctx: Context) -> list[dict]:
+def search_contracts(query: str, ctx: Context | None = None) -> list[dict]:
     """Search vendor contracts for seat limits, renewal terms and obligations.
 
     Use when a limit or a renewal date needs its source. A seat limit reported without
@@ -163,7 +165,7 @@ def search_contracts(query: str, ctx: Context) -> list[dict]:
 
 
 @mcp.tool()
-def list_policies(ctx: Context) -> list[str]:
+def list_policies(ctx: Context | None = None) -> list[str]:
     """List the names of all NovaOps policies. Call before fetching one by name."""
 
     _caller(ctx)  # refuse unidentified callers consistently, even for a listing
@@ -173,7 +175,7 @@ def list_policies(ctx: Context) -> list[str]:
 
 
 @mcp.tool()
-def get_policy(name: str, ctx: Context) -> str:
+def get_policy(name: str, ctx: Context | None = None) -> str:
     """Return the full text of one NovaOps policy.
 
     Args:
@@ -189,7 +191,9 @@ def get_policy(name: str, ctx: Context) -> str:
 # 2. PEOPLE ------------------------------------------------------------------
 
 @mcp.tool()
-def get_employee(employee_id: str = "", name: str = "") -> list[dict]:
+def get_employee(
+    employee_id: str = "", name: str = "", ctx: Context | None = None
+) -> list[dict]:
     """Look an employee up by id, or find candidates by name.
 
     Always returns a list, even for a name that looks unambiguous. The directory
@@ -202,6 +206,7 @@ def get_employee(employee_id: str = "", name: str = "") -> list[dict]:
         name: A full or partial name. May return several people.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         if employee_id:
             row = repositories.get_employee(connection, employee_id)
             return [row] if row else []
@@ -211,20 +216,21 @@ def get_employee(employee_id: str = "", name: str = "") -> list[dict]:
 
 
 @mcp.tool()
-def list_direct_reports(manager_id: str) -> list[dict]:
+def list_direct_reports(manager_id: str, ctx: Context | None = None) -> list[dict]:
     """List the employees who report to a given manager.
 
     Args:
         manager_id: The manager's employee id, e.g. 'E018'.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         return repositories.direct_reports(connection, manager_id)
 
 
 # 3. SYSTEMS, SEATS, CONTRACTS -----------------------------------------------
 
 @mcp.tool()
-def check_software_subscription(software: str) -> dict | None:
+def check_software_subscription(software: str, ctx: Context | None = None) -> dict | None:
     """Seats, limit and renewal for one system, with the contract behind them.
 
     Reports `active_seats` against `seat_limit` and whether the subscription is at or
@@ -235,22 +241,24 @@ def check_software_subscription(software: str) -> dict | None:
         software: A system name, e.g. 'Webex'.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         return repositories.seat_position(connection, software)
 
 
 @mcp.tool()
-def get_contract(contract_id: str) -> dict | None:
+def get_contract(contract_id: str, ctx: Context | None = None) -> dict | None:
     """Return one contract record — term, renewal notice, cost, owner department.
 
     Args:
         contract_id: A contract id, e.g. 'C001'.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         return repositories.get_contract(connection, contract_id)
 
 
 @mcp.tool()
-def list_seat_assignments(software: str) -> dict:
+def list_seat_assignments(software: str, ctx: Context | None = None) -> dict:
     """Who holds a seat on a system — and why that is not recorded.
 
     Call this before answering any question of the form "which of my team has access to
@@ -266,13 +274,16 @@ def list_seat_assignments(software: str) -> dict:
         software: A system name, e.g. 'Webex'.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         return repositories.seat_assignment_gap(connection, software)
 
 
 # 4. TICKETS, REQUESTS, APPROVALS --------------------------------------------
 
 @mcp.tool()
-def list_employee_tickets(employee_id: str, status: str = "") -> list[dict]:
+def list_employee_tickets(
+    employee_id: str, status: str = "", ctx: Context | None = None
+) -> list[dict]:
     """List an employee's IT tickets, optionally filtered by status.
 
     Check this before opening a ticket: an open ticket for the same problem should be
@@ -283,11 +294,12 @@ def list_employee_tickets(employee_id: str, status: str = "") -> list[dict]:
         status: Optional exact status, e.g. 'open'.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         return repositories.list_employee_tickets(connection, employee_id, status or None)
 
 
 @mcp.tool()
-def list_access_requests(employee_id: str) -> list[dict]:
+def list_access_requests(employee_id: str, ctx: Context | None = None) -> list[dict]:
     """List an employee's access requests, with status and decision reason.
 
     An existing request often already carries the answer: a `blocked` request records
@@ -297,11 +309,12 @@ def list_access_requests(employee_id: str) -> list[dict]:
         employee_id: The employee's id, e.g. 'E010'.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         return repositories.list_access_requests(connection, employee_id)
 
 
 @mcp.tool()
-def get_approval_status(request_id: str) -> dict:
+def get_approval_status(request_id: str, ctx: Context | None = None) -> dict:
     """Every approval attached to a request, and which are still outstanding.
 
     A request may require more than one decision — AR001 needs both IT Manager and
@@ -312,6 +325,7 @@ def get_approval_status(request_id: str) -> dict:
         request_id: The request the approvals hang off, e.g. 'AR001'.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         approvals = repositories.approvals_for(connection, request_id)
         outstanding = repositories.outstanding_approvals(connection, request_id)
     return {
@@ -325,18 +339,21 @@ def get_approval_status(request_id: str) -> dict:
 # 5. ONBOARDING AND ASSETS ---------------------------------------------------
 
 @mcp.tool()
-def list_onboarding_tasks(employee_id: str) -> list[dict]:
+def list_onboarding_tasks(employee_id: str, ctx: Context | None = None) -> list[dict]:
     """List a joiner's onboarding tasks, with owner group, status and due date.
 
     Args:
         employee_id: The joiner's id, e.g. 'E001'.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         return repositories.list_onboarding_tasks(connection, employee_id)
 
 
 @mcp.tool()
-def check_asset_inventory(asset_type: str = "", location: str = "") -> list[dict]:
+def check_asset_inventory(
+    asset_type: str = "", location: str = "", ctx: Context | None = None
+) -> list[dict]:
     """List hardware assets, optionally narrowed by type and location.
 
     Args:
@@ -344,6 +361,7 @@ def check_asset_inventory(asset_type: str = "", location: str = "") -> list[dict
         location: e.g. 'Israel', 'Remote'.
     """
     with _db() as connection:
+        resolve_caller(ctx, connection)
         return repositories.check_asset_inventory(connection, asset_type, location)
 
 
@@ -363,7 +381,7 @@ def create_ticket(
     idempotency_key: str,
     related_system_id: str = "",
     priority: str = "medium",
-    ctx: Context = None,  # type: ignore[assignment]
+    ctx: Context | None = None,
 ) -> dict:
     """Open an IT ticket, reusing an open ticket for the same employee and system.
 
@@ -407,7 +425,7 @@ def create_access_request(
     business_justification: str,
     idempotency_key: str,
     approver_id: str = "",
-    ctx: Context = None,  # type: ignore[assignment]
+    ctx: Context | None = None,
 ) -> dict:
     """File an access request, reusing a live request for the same employee and system.
 
@@ -445,7 +463,7 @@ def request_approval(
     approver_id: str,
     reason: str,
     idempotency_key: str,
-    ctx: Context = None,  # type: ignore[assignment]
+    ctx: Context | None = None,
 ) -> dict:
     """Ask a named person to decide on a request, and persist the asking.
 

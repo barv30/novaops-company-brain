@@ -9,6 +9,7 @@ and calling the tool functions directly in-process would test neither.
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -31,14 +32,22 @@ def _listening() -> bool:
 
 
 @pytest.fixture(scope="module")
-def server():
-    """A live tool server for the module, torn down afterwards."""
+def server(tmp_path_factory):
+    """A live tool server for the module, torn down afterwards.
+
+    The server runs against its own copy of the seeded database rather than the working
+    one. These tests file tickets and approvals, and a server process holding the shared
+    file also blocks the next reseed on Windows — so isolating it keeps the suite
+    repeatable and leaves the developer's database untouched.
+    """
 
     if not (config.INDEX_DIR / "corpus.faiss").is_file():
         pytest.skip("no FAISS index; run `python -m scripts.ingest` first")
     reseed()
+    db_path = tmp_path_factory.mktemp("server") / "novaops.db"
+    shutil.copy(config.BUSINESS_DB, db_path)
 
-    env = {**os.environ, "MCP_PORT": str(PORT)}
+    env = {**os.environ, "MCP_PORT": str(PORT), "NOVAOPS_DB": str(db_path)}
     process = subprocess.Popen(
         [sys.executable, "-m", "novaops.mcp_server"],
         env=env,
@@ -109,16 +118,62 @@ async def test_no_tool_exposes_a_caller_argument(server):
     assert offenders == {}, offenders
 
 
-async def test_a_request_without_a_caller_is_refused(server):
-    """Fail closed: an unidentified caller is a misconfigured client, not a guest."""
+async def test_a_client_that_sends_no_caller_still_works(server):
+    """An ordinary MCP client — one connecting the way every lesson connects, with no
+    headers — must get working tools rather than a server where everything errors."""
 
-    result = await call(server, None, "search_handbook", {"query": "promotion"})
-    assert "x-novaops-caller" in text_of(result).lower()
+    result = text_of(await call(server, None, "search_knowledge_base", {"query": "vpn access"}))
+    assert "it_kb/" in result
 
 
-async def test_an_unknown_employee_id_is_refused(server):
-    result = await call(server, "E999", "search_handbook", {"query": "promotion"})
-    assert "E999" in text_of(result)
+async def test_an_unidentified_caller_reaches_nothing_restricted(server):
+    """Anonymous is least privilege, not a refusal: it manages nobody, so the
+    restricted corpus stays out of reach. ADR-015."""
+
+    result = text_of(await call(server, None, "search_handbook", {"query": "promotion"}))
+    assert "manager_playbook" not in result
+    assert "handbook/" in result
+
+
+async def test_an_unknown_employee_id_buys_nothing(server):
+    """An id nobody recognises is a claim we cannot verify, so it grants no privilege."""
+
+    result = text_of(await call(server, "E999", "search_handbook", {"query": "promotion"}))
+    assert "manager_playbook" not in result
+
+
+async def test_every_tool_answers_an_unidentified_caller(server):
+    """One rule for all 20 tools: none of them errors for want of a caller header.
+
+    This is what a validator connecting the standard way will exercise, and it is also
+    the consistency fix — previously the document tools demanded identity and the
+    database tools ignored it."""
+
+    tools = {t.name: t for t in await client_for(server, None).get_tools()}
+    probes = {
+        "get_employee": {"employee_id": "E010"},
+        "list_direct_reports": {"manager_id": "E018"},
+        "check_software_subscription": {"software": "Webex"},
+        "get_contract": {"contract_id": "C001"},
+        "list_seat_assignments": {"software": "Webex"},
+        "list_employee_tickets": {"employee_id": "E010"},
+        "list_access_requests": {"employee_id": "E010"},
+        "get_approval_status": {"request_id": "AR001"},
+        "list_onboarding_tasks": {"employee_id": "E001"},
+        "check_asset_inventory": {"asset_type": "laptop"},
+        "list_policies": {},
+        "get_policy": {"name": "access_management_policy"},
+        "search_knowledge_base": {"query": "vpn"},
+        "search_policies": {"query": "equipment"},
+        "search_hr_documents": {"query": "offer letter"},
+        "search_handbook": {"query": "benefits"},
+        "search_contracts": {"query": "webex seats"},
+    }
+    assert set(probes) <= set(tools), set(probes) - set(tools)
+    for name, args in probes.items():
+        out = text_of(await tools[name].ainvoke(args))
+        assert "x-novaops-caller" not in out.lower(), f"{name} demanded a caller header"
+        assert "Error" not in out[:40], f"{name} errored: {out[:160]}"
 
 
 # 2. THE PERMISSION BOUNDARY, ACROSS THE WIRE -------------------------------

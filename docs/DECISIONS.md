@@ -420,6 +420,72 @@ so re-adding it later fails the suite rather than passing silently.
 
 ---
 
+## ADR-015 · An unidentified caller is anonymous and least-privileged, not rejected
+
+**Date:** 2026-09-21 · **Status:** accepted · **Amends ADR-013**
+
+**Context.** ADR-013 refused any request without an `X-NovaOps-Caller` header, on the argument
+that an unidentified caller is a misconfigured client rather than a guest. That is defensible
+in isolation and wrong in context. Every lesson connects with
+`MultiServerMCPClient({"novaops": {"url": ..., "transport": "streamable_http"}})` and no
+headers. Any client written that way — a marking or validation tool, another student's
+harness, a manual probe — would find a server on which **every tool errors**, which reads as a
+broken project rather than as a strict one.
+
+**Decision.** An absent or unrecognised caller resolves to `identity.ANONYMOUS`: a real
+`Caller` with `UG_REGULAR` and `is_manager=False`. All twenty tools answer it. Nothing
+restricted reaches it.
+
+**Reasoning.** "Fail closed" is a statement about the *restricted* corpus, not about the
+whole server. What the boundary must guarantee is that a `manager_playbook` chunk never
+reaches someone who manages nobody — and an anonymous caller satisfies that by definition,
+because manager status is derived from `manager_id` and nobody reports to "anonymous".
+Refusing outright would additionally withhold the 70 unrestricted documents, which nothing in
+the specification asks for. An unverifiable id likewise buys nothing rather than erroring: a
+claim we cannot check simply grants no privilege.
+
+**Consequences.** A misconfigured client now degrades quietly to least privilege instead of
+failing loudly, so our own runner validates caller ids before it starts rather than relying on
+the server to reject them. Two tests pin the behavior in both directions:
+`test_every_tool_answers_an_unidentified_caller` probes all seventeen read tools with no
+header and asserts none errors, and `test_an_unidentified_caller_reaches_nothing_restricted`
+asserts the restricted corpus stays out of reach.
+
+---
+
+## ADR-016 · Every tool resolves the caller; none exposes one
+
+**Date:** 2026-09-21 · **Status:** accepted
+
+**Context.** An audit of the server found it internally inconsistent: the eight document tools
+resolved a caller, the ten database tools ignored identity entirely.
+`list_employee_tickets("E010")` answered anybody. Defensible on the letter of the spec — "the
+permission boundary is in the document metadata", and the database has no `audience` concept —
+but two different stances on the same server is an oversight however it is argued.
+
+**Decision.** All twenty tools take an optional `ctx` and resolve the caller. Database results
+remain unfiltered by content; what changes is that the server always knows who asked.
+
+**Reasoning.** One rule is readable; two rules with a rationale are a thing a reviewer has to
+reconstruct. It also pays forward: Phase 2 must attach caller id and group to every Langfuse
+span, and a tool that already resolved its caller has that to hand.
+
+**Compatibility.** Verified against what the project material actually checks:
+
+- `GOLDEN-DATASETS.json` references tool **names** — all eleven from §6.3 are present and
+  unrenamed — and contains **no `arg_checks` at all**, so argument shapes are not validated.
+- `EVALUATION-INPUTS.yaml` supplies `caller: {employee_id, name, group}` per case, so an
+  application-supplied identity is the shape the evaluation set already assumes. The header is
+  where we put it.
+- `ctx` does not appear in the schema the model is shown. A tool declaring only `ctx` reports
+  `args == {}`; `test_no_tool_exposes_a_caller_argument` scans every published schema for
+  caller-shaped fields so a future regression fails the suite.
+
+**Consequences.** Twenty tool signatures carry a `ctx` parameter that the lessons' tools do
+not. That is the single divergence from the lesson pattern, and the README names it.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.

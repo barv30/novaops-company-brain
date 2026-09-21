@@ -109,3 +109,14 @@ def build_caller(
                 is_manager=employee_id in managers,
             )
     raise KeyError(f"No employee with id {employee_id!r}")
+
+
+#: The caller used when a request carries no usable identity.
+#:
+#: Least privilege rather than refusal. What the boundary must guarantee is that a
+#: `manager_playbook` chunk never reaches someone who manages nobody — and an anonymous
+#: caller satisfies that by being a non-manager. Refusing outright would additionally
+#: withhold the 70 unrestricted documents from any client that connects without the
+#: caller header, which nothing in the specification asks for and which would make an
+#: ordinary MCP client see a dead server. See ADR-015.
+ANONYMOUS = Caller(employee_id="anonymous", user_group="UG_REGULAR", is_manager=False)

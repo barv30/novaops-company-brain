@@ -13,10 +13,15 @@ session. The model never sees a caller parameter — verified: a tool taking onl
 reports an empty argument schema to the model, so there is no field for it to set and
 nothing for it to know about.
 
-**Fail closed.** A request with no caller header is refused rather than defaulted. An
-unidentified caller is a misconfigured client, not a guest, and defaulting one to the
-least-privileged identity would quietly hide the misconfiguration while still serving
-documents.
+`EVALUATION-INPUTS.yaml` supplies `caller: {employee_id, name, group}` per case, so an
+application-supplied identity is the shape the evaluation set already assumes; the header
+is simply where we put it.
+
+**An unidentified caller is anonymous, not rejected.** See ADR-015. The boundary's job is
+that restricted content never reaches someone who may not read it, and an anonymous
+caller satisfies that by managing nobody. Refusing the request outright would also
+withhold the 70 unrestricted documents and make an ordinary MCP client — one connecting
+the way every lesson connects — see a server where every tool errors.
 """
 
 from __future__ import annotations
@@ -26,51 +31,49 @@ import sqlite3
 from mcp.server.fastmcp import Context
 
 from novaops.db import repositories
-from novaops.identity import Caller
+from novaops.identity import ANONYMOUS, Caller, build_caller
 
 CALLER_HEADER = "x-novaops-caller"
 
 
-class CallerNotIdentifiedError(RuntimeError):
-    """Raised when a request carries no usable caller identity."""
+def caller_id_from(ctx: Context | None) -> str | None:
+    """Read the caller id out of the transport, never out of the tool arguments.
 
+    Returns None when no identity is present — over stdio, from a client that sends no
+    header, or from a health check. The caller decides what that means; here it is
+    simply absence, not an error.
+    """
 
-def caller_id_from(ctx: Context) -> str:
-    """Read the caller id out of the transport, never out of the tool arguments."""
-
-    request = getattr(ctx.request_context, "request", None)
+    if ctx is None:
+        return None
+    try:
+        request = getattr(ctx.request_context, "request", None)
+    except (ValueError, LookupError):
+        # No request context at all — outside a request, or a non-HTTP transport.
+        return None
     if request is None:
-        raise CallerNotIdentifiedError(
-            "No HTTP request on this call, so the caller cannot be established. "
-            "This server must be reached over streamable HTTP."
-        )
-
-    value = request.headers.get(CALLER_HEADER, "").strip()
-    if not value:
-        raise CallerNotIdentifiedError(
-            f"Request carries no {CALLER_HEADER} header. The agent must open its MCP "
-            "session with the caller's employee id; this server never infers one."
-        )
-    return value
+        return None
+    return request.headers.get(CALLER_HEADER, "").strip() or None
 
 
-def resolve_caller(ctx: Context, connection: sqlite3.Connection) -> Caller:
+def resolve_caller(ctx: Context | None, connection: sqlite3.Connection) -> Caller:
     """Build the `Caller` for this request, deriving manager status from the data.
 
     Manager status is derived here rather than trusted from the header, for the same
     reason the id is not read from tool arguments: a client that could assert
     `is_manager` would be a client that could grant itself the restricted corpus. The
     header says *who*; the database says what that means.
+
+    An absent or unrecognised id resolves to `ANONYMOUS`, which manages nobody and so
+    reaches nothing restricted.
     """
 
     employee_id = caller_id_from(ctx)
-    employees = repositories.all_employees(connection)
-    from novaops.identity import build_caller
+    if employee_id is None:
+        return ANONYMOUS
 
     try:
-        return build_caller(employee_id, employees)
-    except KeyError as exc:
-        raise CallerNotIdentifiedError(
-            f"No employee with id {employee_id!r}. The caller header must carry a real "
-            "employee id."
-        ) from exc
+        return build_caller(employee_id, repositories.all_employees(connection))
+    except KeyError:
+        # An id nobody recognises is a claim we cannot verify, so it buys nothing.
+        return ANONYMOUS
