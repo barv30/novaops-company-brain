@@ -70,12 +70,30 @@ def find_employees(connection: sqlite3.Connection, name: str) -> list[dict[str, 
     person's onboarding gets reported.
     """
 
-    return _rows(
+    rows = _rows(
         connection.execute(
             "SELECT * FROM employees WHERE lower(full_name) LIKE ? ORDER BY employee_id",
             (f"%{name.lower()}%",),
         )
     )
+    if rows:
+        return rows
+
+    # Nothing matched the whole string. The corpus is full of pasted email with typos —
+    # `S8` turn 2 asks for "rrachel stein" — so fall back to matching any single word.
+    # A surname alone is usually decisive, and where it is not the caller gets several
+    # rows and has to disambiguate, which is the correct outcome anyway.
+    words = [w for w in name.lower().replace(",", " ").split() if len(w) > 2]
+    seen: dict[str, dict[str, Any]] = {}
+    for word in words:
+        for row in _rows(
+            connection.execute(
+                "SELECT * FROM employees WHERE lower(full_name) LIKE ? ORDER BY employee_id",
+                (f"%{word}%",),
+            )
+        ):
+            seen[row["employee_id"]] = row
+    return [seen[key] for key in sorted(seen)]
 
 
 def direct_reports(connection: sqlite3.Connection, manager_id: str) -> list[dict[str, Any]]:

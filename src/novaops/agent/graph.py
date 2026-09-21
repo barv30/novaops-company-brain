@@ -38,12 +38,14 @@ from novaops import config
 from novaops.agent.policy import (
     BOUNDED_INSTRUCTION,
     REARM_INSTRUCTION,
+    TRUTHFULNESS_CORRECTION,
     ConversationMemory,
     TurnPlan,
     answer_prompt,
     conversation_window,
     distiller_messages,
     memory_is_safe,
+    narrates_untaken_action,
     needs_distillation,
     planner_messages,
     read_tools,
@@ -54,6 +56,15 @@ from novaops.agent.scopes import get_scope
 from novaops.agent.state import AgentState
 from novaops.agent.write_gate import GateDecision, release_writes
 from novaops.llm.client import get_model
+
+
+def _tools_this_turn(state: AgentState) -> list[str]:
+    """Names of the tools that actually ran since the user's newest message."""
+
+    messages = state.get("messages") or []
+    boundaries = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
+    current = messages[boundaries[-1]:] if boundaries else messages
+    return [m.name for m in current if isinstance(m, ToolMessage) and m.name]
 
 
 def used_tool_this_turn(messages: list) -> bool:
@@ -178,6 +189,7 @@ def build_graph(
             "gate_released": decision.released,
             "force_tool": False,
             "tool_rounds": 0,
+            "corrected": False,
         }
 
     # 4. MODEL --------------------------------------------------------------
@@ -215,6 +227,24 @@ def build_graph(
         loadout = [] if exhausted else state["loadout"]
         forced = bool(state.get("force_tool")) and bool(loadout)
         response = model_for(loadout, force=forced).invoke(messages)
+
+        # Truthfulness is checked, not requested. On S8 turn 4 the gate correctly
+        # releases nothing and the model writes "[Called create_access_request with
+        # parameters: ...]" as ordinary prose — no tool ran, and to a reader that is
+        # indistinguishable from having filed it. Two rounds of prompt did not stop it,
+        # so the answer is inspected and rewritten once. Deterministic code deciding
+        # what the model may claim, which is the same principle as the write gate.
+        if not getattr(response, "tool_calls", None):
+            from novaops.agent.policy import message_text as _text
+
+            claimed = narrates_untaken_action(_text(response), _tools_this_turn(state))
+            if claimed and not state.get("corrected"):
+                corrected = model_for(loadout, force=False).invoke(
+                    [SystemMessage(prompt + TRUTHFULNESS_CORRECTION),
+                     *conversation_window(state["messages"])]
+                )
+                return {"messages": [corrected], "force_tool": False, "corrected": True}
+
         return {"messages": [response], "force_tool": False}
 
     # 5. REARM — the model answered without the lookup it said it needed ----

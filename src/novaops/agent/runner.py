@@ -205,6 +205,47 @@ def _top_level_status(payload: str) -> Status | None:
         return None
 
 
+def approve(
+    *,
+    approval_id: str,
+    decided_by: str,
+    approved: bool,
+    reason: str,
+    open_db=None,
+) -> dict:
+    """Record a human's decision on an approval. Application code only.
+
+    This is the other half of the write gate, and the reason it is a plain function on
+    the runner rather than a tool on the server: it is the one thing that can open the
+    gate, so it must sit somewhere a model cannot reach. The caller supplies `approved`
+    from a person's actual response — an `interrupt()` resume, a CLI prompt, a test —
+    never from anything a model produced. See ADR-014.
+
+    Idempotent: recording the same decision twice is a no-op, because a resume after a
+    restart legitimately replays it.
+    """
+
+    from novaops.db import writes
+    from novaops.db.connection import connect as default_connect
+
+    opener = open_db or default_connect
+    connection = opener()
+    try:
+        result = writes.record_decision(
+            connection, approval_id=approval_id, decided_by=decided_by,
+            approved=approved, reason=reason,
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    return {
+        "approval_id": result.entity_id,
+        "status": result.row.get("status"),
+        "disposition": result.disposition,
+    }
+
+
 async def answer(
     message: str,
     *,
@@ -218,12 +259,18 @@ async def answer(
     turn: int | None = None,
     case_id: str | None = None,
     expect_fresh: bool = False,
+    pending_request_id: str | None = None,
 ) -> TurnResult:
     """Run one turn and return what it produced.
 
     `tools` and `checkpointer` are optional so a caller replaying a multi-turn session
     can open them once and reuse them across turns — which is what preserving state
     *within* a session means in practice.
+
+    `pending_request_id` names the business request this turn concerns — the thing the
+    write gate checks approvals against. It is an application input for the same reason
+    the caller is: if the model could name the request, it could name one that happens
+    to be approved. Absent, the gate has nothing to check and releases nothing.
 
     `expect_fresh=True` asserts that this thread has no history yet, and raises if it
     does. Pass it on the first turn of every independent case: a case id repeats across
@@ -283,6 +330,8 @@ async def answer(
                     "scope": scope,
                     "thread_id": thread_id,
                     "request_id": request_id,
+                    **({"pending_request_id": pending_request_id}
+                       if pending_request_id else {}),
                 },
                 config=tracing.bind_callbacks(graph_config),
             )

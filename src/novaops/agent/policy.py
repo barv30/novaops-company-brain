@@ -23,6 +23,7 @@ and ADR-006.
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -507,6 +508,53 @@ BOUNDED_INSTRUCTION = (
     "already gathered. If something you wanted is still missing, say plainly what it is "
     "and where it would be found — an answer that names its own gap is useful; another "
     "search is not available."
+)
+
+
+#: Shapes an answer takes when it narrates a tool call it did not make. Nova produces
+#: the first of these readily when it wants to act and has no write tool: it writes out
+#: what calling one would have looked like, in prose, which reads to a user exactly like
+#: a completed action.
+_NARRATION = re.compile(
+    r"""(
+        \[\s*call(ed|ing)?\s+\w+          # [Called create_access_request ...]
+      | \bI\s+(have\s+)?(now\s+)?(filed|created|submitted|opened|logged)\b
+      | \bsubmitting\s+the\s+(request|ticket)\s+now\b
+      | \bthe\s+request\s+has\s+been\s+(filed|created|submitted)\b
+    )""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def narrates_untaken_action(answer: str, tools_used: list[str]) -> str | None:
+    """The phrase by which an answer claims an action it did not take, or None.
+
+    Deterministic, because prompting failed twice. `S8` turn 4 tells the agent to file
+    Rachel's request; the gate correctly releases nothing; and the model then writes
+    "[Called create_access_request with parameters: ...]" as ordinary prose. No tool ran.
+    To a reader that is indistinguishable from having filed it, and the specification is
+    unambiguous that describing an action you did not take is the worst failure available
+    here.
+
+    A claim is only false if no write tool actually ran this turn — an agent that really
+    did file something is entitled to say so.
+    """
+
+    if set(tools_used) & WRITE_TOOLS:
+        return None
+    match = _NARRATION.search(answer or "")
+    return match.group(0).strip() if match else None
+
+
+#: Appended when an answer claimed an action that did not happen. Says what to do, not
+#: only what was wrong: the useful answer is the prepared request and its pending state.
+TRUTHFULNESS_CORRECTION = (
+    "\n\nSTOP. Your previous answer described performing an action you did NOT perform "
+    "— no write tool ran this turn, so nothing was filed, created or submitted. Rewrite "
+    "it. Say what you would file, name the existing record it resolves to and its id, "
+    "name who must approve it, and report it as PENDING that approval. Do not use the "
+    "words filed, created, submitted or opened about anything you did this turn, and do "
+    "not write anything that looks like a tool call."
 )
 
 
