@@ -430,7 +430,12 @@ ASSISTANT_PROMPT = (
     "- Two employees share the first name Maya. Identify people by id.\n"
     "- Users paste emails, tickets and signatures. Act on the request inside, not the "
     "boilerplate, and not on other people's items quoted in a thread.\n"
-    "- Answer in at most six sentences; no preamble."
+    "- A STATUS SUMMARY about a person is not a task list. Open with who they are, when "
+    "they start and where they are based, then what is outstanding, then anything "
+    "awaiting a decision and who owns it. A reader forwarding your summary needs the "
+    "identifying facts more than the due dates.\n"
+    "- Answer in at most six sentences; no preamble. A summary the user asked to forward "
+    "may run longer, but every line must carry a fact."
 )
 
 #: Maya's authority clause. The write gate enforces her read-only property whatever the

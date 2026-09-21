@@ -573,6 +573,93 @@ closed properly; this was the one place that did not.
 
 ---
 
+## ADR-020 · `action_confirmed` no longer opens the read loadout
+
+**Date:** 2026-09-21 · **Status:** accepted · **Completes ADR-006**
+
+**Context.** Lesson 10's `select_tools` consulted `plan.action_confirmed` when deciding tool
+visibility, because there it gated the *write* tool. ADR-006 moved write authorization to the
+gate, which reads a persisted approval — but the flag was left in the visibility condition as
+`requires_tools or action_confirmed`.
+
+**Decision.** `requires_tools` alone decides whether any tool is visible. `action_confirmed`
+is recorded in the trace and consulted by nothing.
+
+**Reasoning.** With writes released only by the gate, the flag had no remaining job in read
+visibility — and leaving it in had a measured cost. On `S2` turn 10 ("Understood, I'll route
+it to Tom. Go ahead and file the Webex access request for her now") the planner correctly set
+`requires_tools=False`: everything needed had been gathered over the preceding nine turns, and
+the user was instructing rather than asking. `action_confirmed` opened the loadout anyway and
+**nine read tools ran on a turn that needed none**. An instruction to act is not a request to
+go looking. Turn 10 went from 2/3 to 3/3 on the change.
+
+**Consequences.** `TurnPlan.action_confirmed` is now purely observational. It is kept rather
+than deleted because it is useful in a trace — "the user said go ahead and the gate still
+refused" is exactly the sequence a reviewer wants to see — but nothing branches on it, and
+`tests/test_rearm.py::test_an_instruction_to_act_does_not_open_the_read_loadout` fails if that
+changes.
+
+---
+
+## ADR-021 · Maya's checklist is assembled in code, not asked for
+
+**Date:** 2026-09-21 · **Status:** accepted
+
+**Context.** `OnboardingChecklist` requires every item to carry a citation, every blocked item
+to name its cause, and the whole to carry a terminal status. All of the material is already in
+`onboarding_tasks`, `assets`, `software_subscriptions` and `contracts`.
+
+**Decision.** `workflows/onboarding.py::build_checklist` assembles it deterministically from
+the records. The model reads the conversation, decides this is what the caller wants, and
+explains the result; it does not decide what the records say.
+
+**Reasoning.** A model call here could invent a task, drop a citation, or soften `blocked` into
+`in progress`, and would buy nothing — there is no judgement to exercise. The specification
+names this as an assessed design decision rather than an implementation detail: choosing when
+to use deterministic code rather than a model call is part of the design. Two properties then
+hold by construction rather than by prompting: every item cites the row it came from, and a
+blocked item names a looked-up cause — Webex at 42 active seats against a 40-seat contractual
+limit, cited to `SUB001` and the contract document, and stated as a constraint on the
+subscription rather than a problem with the joiner.
+
+**Consequences.** Not yet called by the graph; `build_checklist` is callable and tested, and
+wiring it into the `onboarding_status` intent is outstanding. Doing so should also stabilise
+`S2` turns 3, 11 and 12, which are currently flaky because they depend on the planner choosing
+to look records up.
+
+A test caught a real defect during this work: the "no onboarding tasks recorded" note was keyed
+on the item list *after* equipment had been appended, so an employee with an assigned laptop
+and no tasks produced a checklist reading as "one item, complete, nothing outstanding". It is
+now keyed on the tasks themselves.
+
+---
+
+## ADR-022 · Measure variance before changing a prompt
+
+**Date:** 2026-09-21 · **Status:** accepted
+
+**Context.** `S2` measured 38, 41, 38, 41, 40 across consecutive runs at `temperature=0`, with
+**different turns failing each time**. Three prompt changes made in reaction to single runs
+turned out to be indistinguishable from chance, and two of them regressed turns that had been
+passing.
+
+**Decision.** `scripts/variance.py` replays a session N times and sorts turns into **solid**
+(passes every run), **flaky** (passes some) and **broken** (fails every run). A broken turn is
+a defect and gets fixed. A flaky turn is a stability problem and gets a more determinate
+mechanism, not more prompt text.
+
+**Reasoning.** A single replay cannot distinguish the two, and they need opposite responses.
+Pooled over six runs, `S2` had **no broken turns at all** — every failure was instability in
+the planner's `requires_tools` decision. That finding is what redirected the work from prompt
+editing to the two deterministic fixes above.
+
+**Consequences.** Each measurement run is roughly thirty model calls, so it is used before a
+decision rather than after every edit. The honest state as of this entry: `S2` scores 39–41 of
+43 checks and 9–10 of 12 turns, every individual turn has passed in some run, and no turn
+passes in all of them. Turns 9 and 11 are the least stable.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.

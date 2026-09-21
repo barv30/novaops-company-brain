@@ -9,8 +9,9 @@ actions. Built as the AI Engineer capstone against
 Workflows 3 (Vendor) and 4 (Renewal) and the Lesson 12/14 stages are not attempted — see
 [ADR-001](docs/DECISIONS.md#adr-001--build-the-required-path-only).
 
-> **Status: Phase 2 — the agent loop runs end to end.** Phase 1 complete; the Maya and
-> Webex workflows are next. The claim-to-file
+> **Status: Phase 3 — Maya.** `S1` passes 11/11 checks, 4/4 turns. `S2` scores 39–41 of 43
+> checks and 9–10 of 12 turns, varying by run — see [ADR-022](docs/DECISIONS.md) for what
+> that variance is and what is being done about it. `S9` not yet run. The claim-to-file
 > map below is the build contract. Rows
 > marked *planned* are not yet implemented and say so; no row claims behavior that does not
 > exist. This table and the code move in the same commit.
@@ -51,8 +52,11 @@ visible in the repository.
 | Scoped tool visibility — not every tool on every call | [src/novaops/agent/scopes.py](src/novaops/agent/scopes.py) · [policy.py](src/novaops/agent/policy.py) | done — 4 tools vs 10 on two real questions |
 | A write is released only against a persisted approval, never `action_confirmed` | [src/novaops/agent/write_gate.py](src/novaops/agent/write_gate.py) · [ADR-017](docs/DECISIONS.md) | done |
 | Maya writes nothing — enforced as a checked condition, not a folder boundary | [src/novaops/agent/scopes.py](src/novaops/agent/scopes.py) `writes_allowed=False` | done |
-| Every claim carries a citation | `src/novaops/contracts/common.py` | planned — Phase 3 |
-| Webex reported as blocked at 42-of-40 seats | `src/novaops/agent/scopes.py` | planned — Phase 3 |
+| Every claim carries a citation | [src/novaops/contracts/common.py](src/novaops/contracts/common.py) · [workflows/onboarding.py](src/novaops/workflows/onboarding.py) | done |
+| Blocked items name a looked-up cause, not a description | [src/novaops/workflows/onboarding.py](src/novaops/workflows/onboarding.py) · [ADR-021](docs/DECISIONS.md) | done |
+| Turns are scored against binding fields only | [evals/scoring.py](evals/scoring.py) · [evals/golden.py](evals/golden.py) | done |
+| Flaky turns are told apart from broken ones before acting | [scripts/variance.py](scripts/variance.py) · [ADR-022](docs/DECISIONS.md) | done |
+| Webex reported as blocked at 42-of-40 seats | [src/novaops/workflows/onboarding.py](src/novaops/workflows/onboarding.py) | done — cited to SUB001 and C001 |
 | Existing records reused, never duplicated | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-011](docs/DECISIONS.md) | done |
 | Replaying a request creates no second row | [src/novaops/db/idempotency.py](src/novaops/db/idempotency.py) · [tests/test_db.py](tests/test_db.py) | done |
 | Approvals are recordable — the tool no lesson provides | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-012](docs/DECISIONS.md) | done |

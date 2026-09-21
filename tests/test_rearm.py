@@ -174,3 +174,39 @@ async def test_rearm_does_not_fire_when_the_planner_wants_no_tools(monkeypatch, 
 
     assert not result.get("rearmed")
     assert "any" not in model.calls, "a no-tool turn was forced into a lookup"
+
+
+# --- action_confirmed must not open the read loadout ------------------------
+
+async def test_an_instruction_to_act_does_not_open_the_read_loadout(monkeypatch, tmp_path):
+    """S2 turn 10: "go ahead and file it".
+
+    The planner correctly sets requires_tools=False — everything needed was gathered in
+    earlier turns, and the user is instructing, not asking. Lesson 10 also consulted
+    `action_confirmed` here, which opened the loadout anyway and put nine read tools on a
+    turn that needed none. Writes come from the gate in this design, so `action_confirmed`
+    has no remaining job in read visibility.
+    """
+
+    model = _FakeModel()
+    monkeypatch.setattr(graph_module, "get_model", lambda **kw: model)
+    monkeypatch.setattr(
+        _FakeModel,
+        "with_structured_output",
+        lambda self, m, include_raw=False: _Structured(
+            TurnPlan(
+                current_intent="access_request",
+                requires_tools=False,
+                action_confirmed=True,   # the user said "go ahead"
+            )
+            if m is TurnPlan
+            else ConversationMemory(current_intent="x", important_facts=["y"])
+        ),
+    )
+
+    result = await _run(model, tmp_path)
+
+    assert result["loadout"] == [], (
+        f"action_confirmed opened the read loadout: {result['loadout']}"
+    )
+    assert "any" not in model.calls, "a turn needing no lookup was forced into one"

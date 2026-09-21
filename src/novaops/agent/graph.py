@@ -141,9 +141,18 @@ def build_graph(
         plan = TurnPlan(**state["plan"])
         active = get_scope(state.get("scope", "maya"))
 
+        # `requires_tools` alone decides whether ANY tool is visible. `action_confirmed`
+        # is deliberately not consulted here, though Lesson 10 consulted it: there it
+        # gated write visibility, and in this design writes come only from the gate
+        # below, so it has no remaining job in the read loadout.
+        #
+        # Leaving it in had a measurable cost. On S2 turn 10 — "go ahead and file it" —
+        # the planner correctly set requires_tools=False, and `action_confirmed` opened
+        # the loadout anyway: nine read tools ran on a turn that needed none. An
+        # instruction to act is not a request to go looking.
         loadout = (
             active.visible_reads(plan.current_intent, catalogue)
-            if (plan.requires_tools or plan.action_confirmed)
+            if plan.requires_tools
             else []
         )
 
