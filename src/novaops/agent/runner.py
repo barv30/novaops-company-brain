@@ -165,20 +165,44 @@ def _terminal_status(messages: list, answer: str) -> str:
     if not answer.strip():
         return Status.FAILED.value
 
-    valid = {s.value for s in Status}
-    reported: list[Status] = []
-    for message in _this_turn(messages):
-        if not isinstance(message, ToolMessage):
-            continue
-        text = message_text(message)
-        for candidate in valid:
-            # The tool result is JSON; the status appears as a quoted field value.
-            if f'"status": "{candidate}"' in text or f'"status":"{candidate}"' in text:
-                reported.append(Status(candidate))
+    reported = [
+        status
+        for message in _this_turn(messages)
+        if isinstance(message, ToolMessage)
+        for status in (_top_level_status(message_text(message)),)
+        if status is not None
+    ]
 
     if not reported:
         return Status.COMPLETED.value
     return max(reported, key=_SEVERITY.index).value
+
+
+def _top_level_status(payload: str) -> Status | None:
+    """The `status` a tool result declares for *itself*, or None.
+
+    Parsed, not matched. An `OnboardingChecklist` is `completed` while containing items
+    whose own status is `blocked` — that is the contract's design, because the blocked
+    items are the answer rather than a failure to produce one. A scan for the string
+    `"status": "blocked"` finds those nested item statuses and reports the whole turn as
+    blocked, which is how the first version of this function turned every Maya
+    onboarding turn into a false blocker.
+    """
+
+    import json
+
+    try:
+        parsed = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+
+    value = parsed.get("status")
+    try:
+        return Status(value)
+    except ValueError:
+        return None
 
 
 async def answer(
