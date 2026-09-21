@@ -59,7 +59,18 @@ def _audit(
     event_type: str,
     actor: str | None,
     notes: str,
+    request_id: str | None = None,
 ) -> None:
+    """Append the audit row, tagging it with the request that caused it.
+
+    The request id travels from the agent in an MCP header (see `mcp_server/context.py`)
+    and lands here, so a write can be traced back to its request through the database as
+    well as through the trace. That is what "survives across MCP calls" means in a form
+    somebody can check without Langfuse open.
+    """
+
+    if request_id:
+        notes = f"{notes} [request {request_id}]"
     connection.execute(
         "INSERT INTO audit_log "
         "(event_id, entity_type, entity_id, event_type, actor_employee_id, created_at, notes) "
@@ -111,8 +122,14 @@ def create_access_request(
     idempotency_key: str,
     approver_id: str | None = None,
     actor: str | None = None,
+    agent_request_id: str | None = None,
 ) -> WriteResult:
     """File an access request, reusing an existing one when there is one.
+
+    `agent_request_id` is the *agent's* request id, not this row's. They are different
+    things and the names have to say so: `request_id` below is the AR id this function
+    mints, and tagging the audit row with that would record nothing a reader did not
+    already know.
 
     Order matters: ledger first (did *we* already do this?), then natural-key match (did
     anyone?), then create. Checking the ledger first is what makes an exact replay cheap
@@ -168,6 +185,7 @@ def create_access_request(
         event_type="created",
         actor=actor,
         notes=f"Access request for {employee_id} on {system_id}.",
+        request_id=agent_request_id,
     )
     row = dict(
         connection.execute(
@@ -192,6 +210,7 @@ def create_ticket(
     priority: str = "medium",
     assigned_team: str = "IT",
     actor: str | None = None,
+    agent_request_id: str | None = None,
 ) -> WriteResult:
     """Open a ticket, reusing an open one for the same employee and system."""
 
@@ -245,6 +264,7 @@ def create_ticket(
         event_type="created",
         actor=actor,
         notes=subject,
+        request_id=agent_request_id,
     )
     row = dict(
         connection.execute("SELECT * FROM tickets WHERE ticket_id = ?", (ticket_id,)).fetchone()
@@ -263,6 +283,7 @@ def request_approval(
     reason: str,
     idempotency_key: str,
     actor: str | None = None,
+    agent_request_id: str | None = None,
 ) -> WriteResult:
     """Ask a named person to decide, and persist the asking.
 
@@ -319,6 +340,7 @@ def request_approval(
         event_type="requested",
         actor=actor,
         notes=f"Approval requested from {approver_id} for {request_type} {request_id}.",
+        request_id=agent_request_id,
     )
     row = dict(
         connection.execute(

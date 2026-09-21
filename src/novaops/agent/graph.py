@@ -47,6 +47,7 @@ from novaops.agent.policy import (
     needs_distillation,
     planner_messages,
     read_tools,
+    render_memory_for_answer,
     render_plan,
 )
 from novaops.agent.scopes import get_scope
@@ -185,7 +186,15 @@ def build_graph(
         active = get_scope(state.get("scope", "maya"))
         exhausted = state.get("tool_rounds", 0) >= config.MAX_TOOL_ROUNDS
 
-        prompt = answer_prompt(active) + render_plan(plan)
+        # The answering model sees the distilled memory too, not only the planner.
+        # Without this it gets `conversation_window` — two turns verbatim — plus an
+        # unordered list of facts, and nothing that says which came first. Measured on
+        # `S3` turn 8, "who was the person in my very first question?": the memory held
+        # "Rachel Stein's Webex licence — resolved" and the answer said Alex Kim, the
+        # current subject, because that was the only history it could see. Distillation
+        # is supposed to replace the raw messages for the model that answers, not just
+        # for the one that plans.
+        prompt = answer_prompt(active) + render_memory_for_answer(state) + render_plan(plan)
         if exhausted:
             # Offer nothing and say why. Leaving tools bound and asking nicely does not
             # stop a model that has decided to keep looking: unbounded, one turn cycled

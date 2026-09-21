@@ -209,6 +209,9 @@ PLANNER_PROMPT = (
     "re-reading it adds nothing;\n"
     "    * a recap, a summary, or 'say that again more briefly';\n"
     "    * reasoning or arithmetic over numbers already quoted above;\n"
+    "    * a question ABOUT the conversation itself — 'who did I ask about first', "
+    "'what did I tell you earlier', 'remind me what I said'. The answer is the session's "
+    "own history, so carry the value into relevant_facts and look nothing up;\n"
     "    * an INSTRUCTION TO ACT on something already established — 'go ahead', 'file "
     "it', 'do it now' — where the earlier turns already gathered who, what system and "
     "why. Preparing an action is not researching one; you are not being asked a "
@@ -269,7 +272,13 @@ DISTIL_PROMPT = (
     "- Keep concrete values (E001, 2026-08-01, 42 of 40 seats), not descriptions of them.\n"
     "- NEVER silently drop an active constraint. Move it to decisions only if the user "
     "explicitly withdrew or satisfied it.\n"
-    "- Move a topic the user closed into decisions, and drop its raw detail.\n"
+    "- Move a topic the user closed into decisions, and drop its raw detail — but KEEP "
+    "WHO AND WHAT IT WAS ABOUT. A closed branch loses its tool output, never its "
+    "subject. 'Rachel Stein's Webex licence — resolved, seat expansion with Amir' is "
+    "the right shape; a decision that no longer names Rachel is a fact destroyed, and "
+    "the user may ask who it was about long after the topic is dead.\n"
+    "- Keep the subject of the FIRST thing the session was about, however far back it "
+    "is and however thoroughly it was resolved.\n"
     "- unresolved_items must keep anything still outstanding.\n"
     "- Be compact. This is a working memory, not minutes."
 )
@@ -501,6 +510,31 @@ def answer_prompt(scope) -> str:
     """The system prompt text for the answering model, in this scope's authority."""
 
     return ASSISTANT_PROMPT + (WEBEX_CLAUSE if scope.writes_allowed else MAYA_CLAUSE)
+
+
+def render_memory_for_answer(state: dict) -> str:
+    """The distilled memory, as the answering model should see it.
+
+    Empty until distillation has run, so a short session pays nothing. Once it has run,
+    this is the only place the answering model can learn anything older than
+    `conversation_window` — which is two turns. A session that has moved on twice has
+    lost everything else.
+
+    Ordered explicitly, because "who did I ask about first" cannot be answered from an
+    unordered set of facts: the decisions list is in the order topics were closed.
+    """
+
+    memory = state.get("memory") or {}
+    if not memory:
+        return ""
+    return (
+        "\n\n--- SESSION MEMORY (earlier turns, oldest first) ---\n"
+        + render_memory(memory)
+        + "\nThis is what the conversation established before the messages you can see. "
+        "Facts here are as true as anything quoted above; a topic recorded as resolved "
+        "is still a fact about this session and may be asked about."
+        "\n--- END SESSION MEMORY ---"
+    )
 
 
 def render_plan(plan: TurnPlan) -> str:

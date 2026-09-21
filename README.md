@@ -6,7 +6,9 @@ actions. Built as the AI Engineer capstone against
 
 **Scope: the required path.** Workflow 1 (Maya · HR and onboarding) and Workflow 2
 (Webex · IT operations) as two scopes on one agent, plus the Lesson 11 observability stage.
-Workflows 3 (Vendor) and 4 (Renewal) and the Lesson 12/14 stages are not attempted — see
+Workflows 3 (Vendor) and 4 (Renewal) are not attempted, and neither are the optional
+Lesson 12 (eval loop engineering), Lesson 13 (security and guardrails) or Lesson 14
+(packaging and deployment) stages — see
 [ADR-001](docs/DECISIONS.md#adr-001--build-the-required-path-only).
 
 > **Status: Phase 3 — Maya.** `S1` 11/11 checks. `S2` 37–41 of 43. `S9` 31–32 of 33, with
@@ -80,10 +82,11 @@ the spec asks for them under `evals/`.
 
 | Check | File | Status |
 | --- | --- | --- |
-| A turn-1 constraint still binds on turn 9 | `evals/test_constraint_carry.py` | planned — Phase 5 |
-| A closed branch stops driving tool choice | `evals/test_closed_branch.py` | planned — Phase 5 |
-| Replaying a request creates no second row | `evals/test_idempotency.py` | planned — Phase 5 |
-| A pending approval survives a restart | `evals/test_restart_survival.py` | planned — Phase 5 |
+| A turn-1 constraint still binds eight turns later | [evals/test_conversation_properties.py](evals/test_conversation_properties.py) | done |
+| A closed branch stops driving the conversation | [evals/test_conversation_properties.py](evals/test_conversation_properties.py) | done |
+| A durable fact survives its branch closing | [evals/test_conversation_properties.py](evals/test_conversation_properties.py) | **unreliable** — xfail, see the reason in the file |
+| Replaying a request creates no second row | [evals/test_idempotency.py](evals/test_idempotency.py) | done — asserted on row counts |
+| A pending approval survives a restart | [evals/test_restart_survival.py](evals/test_restart_survival.py) | done — real subprocesses, not a mocked restart |
 
 ## Where this diverges from the course lessons
 

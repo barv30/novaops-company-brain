@@ -29,7 +29,7 @@ from novaops.agent.policy import message_text
 from novaops.agent.scopes import MAYA, get_scope
 from novaops.contracts.common import Status
 from novaops.identity import Caller
-from novaops.mcp_server.context import CALLER_HEADER
+from novaops.mcp_server.context import CALLER_HEADER, REQUEST_HEADER
 from novaops.observability import tracing
 
 #: Distinguishes one process run from the next, so a thread id built from a case id is
@@ -71,7 +71,9 @@ class TurnResult:
     state: dict[str, Any] = field(default_factory=dict)
 
 
-async def load_tools(caller: Caller, url: str | None = None) -> list:
+async def load_tools(
+    caller: Caller, url: str | None = None, *, correlation_id: str | None = None
+) -> list:
     """Open an MCP session carrying this caller's badge, and discover the tools.
 
     The session is per caller, which is the whole point: the header is set once, here,
@@ -86,7 +88,10 @@ async def load_tools(caller: Caller, url: str | None = None) -> list:
             "novaops": {
                 "url": url or config.MCP_SERVER_URL,
                 "transport": "streamable_http",
-                "headers": {CALLER_HEADER: caller.employee_id},
+                "headers": {
+                    CALLER_HEADER: caller.employee_id,
+                    **({REQUEST_HEADER: correlation_id} if correlation_id else {}),
+                },
             }
         }
     )
@@ -174,7 +179,7 @@ async def answer(
     request_id = request_id or tracing.new_request_id()
 
     if tools is None:
-        tools = await load_tools(caller)
+        tools = await load_tools(caller, correlation_id=request_id)
 
     async def _run(saver) -> TurnResult:
         app = build_graph(tools, saver, open_db=open_db)

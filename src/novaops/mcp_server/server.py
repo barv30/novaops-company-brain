@@ -40,7 +40,7 @@ from novaops import config
 from novaops.db import repositories, writes
 from novaops.db.connection import connect
 from novaops.identity import Caller
-from novaops.mcp_server.context import resolve_caller
+from novaops.mcp_server.context import request_id_from, resolve_caller
 from novaops.retrieval.filters import visible_ids
 from novaops.retrieval.store import FaissStore, SearchHit
 from novaops.workflows.onboarding import build_checklist
@@ -498,6 +498,7 @@ def create_ticket(
             priority=priority,
             idempotency_key=idempotency_key,
             actor=actor,
+            agent_request_id=request_id_from(ctx),
         )
         connection.commit()
     return {"disposition": result.disposition, "ticket_id": result.entity_id, **result.row}
@@ -537,6 +538,7 @@ def create_access_request(
             approver_id=approver_id or None,
             idempotency_key=idempotency_key,
             actor=actor,
+            agent_request_id=request_id_from(ctx),
         )
         connection.commit()
     return {"disposition": result.disposition, "request_id": result.entity_id, **result.row}
@@ -575,6 +577,7 @@ def request_approval(
             reason=reason,
             idempotency_key=idempotency_key,
             actor=actor,
+            agent_request_id=request_id_from(ctx),
         )
         connection.commit()
     return {"disposition": result.disposition, "approval_id": result.entity_id, **result.row}

@@ -35,6 +35,13 @@ from novaops.identity import ANONYMOUS, Caller, build_caller
 
 CALLER_HEADER = "x-novaops-caller"
 
+#: The request id the agent is working under. The specification asks for "a request id
+#: that survives across MCP calls and workflow resumes" — so it travels the same way the
+#: caller does, in the transport rather than in a tool argument, and the write tools put
+#: it in `audit_log`. A write can then be traced back to the request that caused it
+#: through the database, not only through the trace.
+REQUEST_HEADER = "x-novaops-request"
+
 
 def caller_id_from(ctx: Context | None) -> str | None:
     """Read the caller id out of the transport, never out of the tool arguments.
@@ -54,6 +61,20 @@ def caller_id_from(ctx: Context | None) -> str | None:
     if request is None:
         return None
     return request.headers.get(CALLER_HEADER, "").strip() or None
+
+
+def request_id_from(ctx: Context | None) -> str | None:
+    """The agent's request id for this call, when the session carried one."""
+
+    if ctx is None:
+        return None
+    try:
+        request = getattr(ctx.request_context, "request", None)
+    except (ValueError, LookupError):
+        return None
+    if request is None:
+        return None
+    return request.headers.get(REQUEST_HEADER, "").strip() or None
 
 
 def resolve_caller(ctx: Context | None, connection: sqlite3.Connection) -> Caller:
