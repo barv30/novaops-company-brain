@@ -136,17 +136,49 @@ def _sources(messages: list) -> list[str]:
     return found
 
 
-def _terminal_status(answer: str, gate_released: list[str]) -> str:
-    """The run's terminal state.
+#: Least to most severe. A turn adopts the worst status any workflow it consulted
+#: reported: a run that reached a blocker and also answered a trivial question is
+#: blocked, not completed.
+_SEVERITY = [
+    Status.COMPLETED,
+    Status.PENDING,
+    Status.NEEDS_HUMAN,
+    Status.BLOCKED,
+    Status.FAILED,
+]
 
-    Deliberately conservative and deliberately dumb for now: Phase 2 only has to end
-    every run in exactly one `Status`. Maya and Webex each refine this in their own
-    phase, where there is a business outcome to distinguish `blocked` from `completed`.
+
+def _terminal_status(messages: list, answer: str) -> str:
+    """The run's terminal state, taken from the workflow rather than guessed.
+
+    `OnboardingChecklist` and `AccessDecision` each carry a `status`, and a tool that
+    returns one is reporting where the work actually got to. Deriving the turn's status
+    from the answer text instead would mean the trace says `completed` while the typed
+    object says `blocked` — and the specification is explicit that the status is what a
+    marker reads first, and that the prose must agree with it.
+
+    Rachel Stein's case is the one this exists for: eligible, at 42 of 40 seats, nothing
+    filed. `blocked` is the correct and creditable answer; `completed` would be a
+    confident wrong one.
     """
 
     if not answer.strip():
         return Status.FAILED.value
-    return Status.COMPLETED.value
+
+    valid = {s.value for s in Status}
+    reported: list[Status] = []
+    for message in _this_turn(messages):
+        if not isinstance(message, ToolMessage):
+            continue
+        text = message_text(message)
+        for candidate in valid:
+            # The tool result is JSON; the status appears as a quoted field value.
+            if f'"status": "{candidate}"' in text or f'"status":"{candidate}"' in text:
+                reported.append(Status(candidate))
+
+    if not reported:
+        return Status.COMPLETED.value
+    return max(reported, key=_SEVERITY.index).value
 
 
 async def answer(
@@ -242,7 +274,7 @@ async def answer(
             )
             used = _tools_used(messages)
             released = list(result.get("gate_released") or [])
-            status = _terminal_status(final, released)
+            status = _terminal_status(messages, final)
             intent = (result.get("plan") or {}).get("current_intent", "other")
 
             span.update(

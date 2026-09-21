@@ -111,14 +111,18 @@ LOADOUTS: dict[str, list[str] | None] = {
         "check_software_subscription", "get_contract", "search_contracts",
         "list_seat_assignments", "search_policies",
     ],
+    # diagnose_access is first for the same reason get_onboarding_checklist is: it
+    # answers the whole question from records in one call, with facts, actions and next
+    # steps already kept apart. The narrower tools stay for turns that want one fact.
     "access_request": [
-        "get_employee", "check_software_subscription", "list_employee_tickets",
-        "list_access_requests", "get_approval_status", "list_seat_assignments",
-        "get_contract", "search_knowledge_base", "search_policies", "get_policy",
+        "diagnose_access", "get_employee", "check_software_subscription",
+        "list_employee_tickets", "list_access_requests", "get_approval_status",
+        "list_seat_assignments", "get_contract", "search_knowledge_base",
+        "search_policies", "get_policy",
     ],
     "ticket_status": [
         "get_employee", "list_employee_tickets", "list_access_requests",
-        "get_approval_status",
+        "get_approval_status", "diagnose_access",
     ],
     "other": None,  # fail open for READS only: None means the whole read catalogue
 }

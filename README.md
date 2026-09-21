@@ -11,7 +11,8 @@ Lesson 12 (eval loop engineering), Lesson 13 (security and guardrails) or Lesson
 (packaging and deployment) stages — see
 [ADR-001](docs/DECISIONS.md#adr-001--build-the-required-path-only).
 
-> **Status: Phase 3 — Maya.** `S1` 11/11 checks. `S2` 37–41 of 43. `S9` 31–32 of 33, with
+> **Status: Phase 4 — Webex.** `W-I-03` answers correctly and changes no rows. `S1` 11/11
+> checks. `S2` 37–41 of 43. `S9` 31–32 of 33, with
 > both permission traps holding every run. The ranges are real run-to-run variance in one
 > planner decision — see [ADR-022](docs/DECISIONS.md) for how broken turns are told apart
 > from flaky ones, and what each gets done about it. The claim-to-file
@@ -64,6 +65,9 @@ visible in the repository.
 | Flaky turns are told apart from broken ones before acting | [scripts/variance.py](scripts/variance.py) · [ADR-022](docs/DECISIONS.md) | done |
 | Webex reported as blocked at 42-of-40 seats | [src/novaops/workflows/onboarding.py](src/novaops/workflows/onboarding.py) | done — cited to SUB001 and C001 |
 | Existing records reused, never duplicated | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-011](docs/DECISIONS.md) | done |
+| Webex diagnoses a request and never claims access was granted | [src/novaops/workflows/access.py](src/novaops/workflows/access.py) | done — `W-I-03` reports blocked, 0 rows changed |
+| Facts, actions and next steps are kept apart | [src/novaops/contracts/access.py](src/novaops/contracts/access.py) | done |
+| The terminal status comes from the workflow, not the prose | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) `_terminal_status` | done |
 | Replaying a request creates no second row | [src/novaops/db/idempotency.py](src/novaops/db/idempotency.py) · [tests/test_db.py](tests/test_db.py) | done |
 | Approvals are recordable — the tool no lesson provides | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-012](docs/DECISIONS.md) | done |
 | `W-I-02`'s missing capability is reported, not invented | [src/novaops/db/repositories.py](src/novaops/db/repositories.py) | done |

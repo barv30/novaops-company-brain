@@ -43,6 +43,7 @@ from novaops.identity import Caller
 from novaops.mcp_server.context import request_id_from, resolve_caller
 from novaops.retrieval.filters import visible_ids
 from novaops.retrieval.store import FaissStore, SearchHit
+from novaops.workflows.access import diagnose_access as diagnose_access_from_records
 from novaops.workflows.onboarding import build_checklist
 
 mcp = FastMCP("novaops-company-brain", host=config.MCP_HOST, port=config.MCP_PORT)
@@ -337,6 +338,32 @@ def list_seat_assignments(software: str, ctx: Context | None = None) -> dict:
 
 
 # 4. TICKETS, REQUESTS, APPROVALS --------------------------------------------
+
+@mcp.tool()
+def diagnose_access(employee_id: str, system: str, ctx: Context | None = None) -> dict:
+    """Why an employee can or cannot use a system, assembled from the records.
+
+    Call this FIRST for any "I cannot use X" or "I need access to X" request. It answers
+    the whole question in one call and keeps three things apart that prose blurs:
+    what the records SHOW, what has actually been DONE, and what should happen NEXT.
+
+    It reads only. It never files anything, and it never reports access as granted.
+    Where a ticket or access request already exists it reports them as *referenced*,
+    which is what reusing a record looks like — do not then open a second one.
+
+    Returns `outcome` (blocked / refused / awaiting_approval / recommended),
+    `blocking_reason`, `observed_facts` with citations, `actions_taken` with the record
+    ids that prove them, and `recommended_next_steps` with their owners.
+
+    Args:
+        employee_id: The employee's id, e.g. 'E010'. Not a name.
+        system: The system name, e.g. 'Webex'.
+    """
+    with _db() as connection:
+        resolve_caller(ctx, connection)
+        decision = diagnose_access_from_records(connection, employee_id, system)
+    return decision.model_dump(mode="json")
+
 
 @mcp.tool()
 def list_employee_tickets(
