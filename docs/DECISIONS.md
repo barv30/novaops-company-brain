@@ -546,6 +546,14 @@ be needed is the submission runner, which does not exist yet.
 **Consequences.** That runner must own thread-id generation rather than using case ids as
 thread ids, since case ids repeat across runs by design.
 
+**Closed in code, not only in prose.** A note in a decision record does not stop the mistake,
+so the hazard is now guarded: `runner.new_thread_id(case_id)` returns `"<case-id>:<run-stamp>"`
+— the case id stays readable for the trace index, the stamp makes it unique per process — and
+`runner.answer(..., expect_fresh=True)` raises `ThreadNotFreshError` if the thread already
+holds messages, with the fix named in the message. `expect_fresh` is for the first turn of an
+independent case only; a session's later turns must land on the same thread, and
+`tests/test_thread_freshness.py` asserts both directions without calling a model.
+
 ---
 
 ## ADR-019 · A stale `with sqlite3.connect(...)` leaked the reseed handle

@@ -17,6 +17,7 @@ It owns the three things a turn needs that the graph itself should not know abou
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,6 +31,27 @@ from novaops.contracts.common import Status
 from novaops.identity import Caller
 from novaops.mcp_server.context import CALLER_HEADER
 from novaops.observability import tracing
+
+#: Distinguishes one process run from the next, so a thread id built from a case id is
+#: unique per run. Case ids repeat across runs by design — `M-I-01` is `M-I-01` every
+#: time — and a repeated thread id replays the previous run's history.
+_RUN_STAMP = uuid.uuid4().hex[:8]
+
+
+def new_thread_id(case_id: str | None = None) -> str:
+    """A thread id no previous run has used.
+
+    The case id is kept as a prefix so a Langfuse session is still recognisable by eye
+    when matching traces to `SUBMISSION.md`; the stamp is what makes it fresh. See
+    ADR-018 — reusing a thread id across runs is the failure that reads as a broken
+    loadout and is actually stale conversation history.
+    """
+
+    return f"{case_id}:{_RUN_STAMP}" if case_id else f"thread-{uuid.uuid4().hex[:12]}"
+
+
+class ThreadNotFreshError(RuntimeError):
+    """Raised when a turn declared as a new case lands on a thread that already has one."""
 
 
 @dataclass
@@ -116,12 +138,18 @@ async def answer(
     request_id: str | None = None,
     turn: int | None = None,
     case_id: str | None = None,
+    expect_fresh: bool = False,
 ) -> TurnResult:
     """Run one turn and return what it produced.
 
     `tools` and `checkpointer` are optional so a caller replaying a multi-turn session
     can open them once and reuse them across turns — which is what preserving state
     *within* a session means in practice.
+
+    `expect_fresh=True` asserts that this thread has no history yet, and raises if it
+    does. Pass it on the first turn of every independent case: a case id repeats across
+    runs, so a thread id built from one silently replays the previous run unless it also
+    carries a run stamp. Use `new_thread_id(case_id)` to get one that does. ADR-018.
     """
 
     get_scope(scope)  # refuse an unknown scope before anything else happens
@@ -133,6 +161,19 @@ async def answer(
     async def _run(saver) -> TurnResult:
         app = build_graph(tools, saver, open_db=open_db)
         graph_config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+
+        if expect_fresh:
+            existing = await app.aget_state(graph_config)
+            if (existing.values or {}).get("messages"):
+                raise ThreadNotFreshError(
+                    f"Thread {thread_id!r} already holds "
+                    f"{len(existing.values['messages'])} messages, but this turn was "
+                    "declared as the start of an independent case. It would replay the "
+                    "previous run's history: the planner sees the question already "
+                    "answered, sets requires_tools=False, and the turn uses no tools. "
+                    "Use new_thread_id(case_id), or reset with "
+                    "`python -m scripts.reseed --checkpoints`."
+                )
 
         with tracing.turn_span(
             name=f"{scope}.turn",

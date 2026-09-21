@@ -58,6 +58,7 @@ visible in the repository.
 | Approvals are recordable — the tool no lesson provides | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-012](docs/DECISIONS.md) | done |
 | `W-I-02`'s missing capability is reported, not invented | [src/novaops/db/repositories.py](src/novaops/db/repositories.py) | done |
 | A pending approval survives the process being killed | `src/novaops/agent/graph.py` | planned — Phase 4 |
+| An independent case cannot replay a previous run's history | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) `new_thread_id` / `expect_fresh` · [ADR-018](docs/DECISIONS.md) | done |
 | Spans named so a reader can follow classify → scope → tools → answer | [src/novaops/observability/tracing.py](src/novaops/observability/tracing.py) | done |
 
 ### Evidence we wrote ourselves
