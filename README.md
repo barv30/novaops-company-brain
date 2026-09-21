@@ -9,7 +9,8 @@ actions. Built as the AI Engineer capstone against
 Workflows 3 (Vendor) and 4 (Renewal) and the Lesson 12/14 stages are not attempted — see
 [ADR-001](docs/DECISIONS.md#adr-001--build-the-required-path-only).
 
-> **Status: Phase 1 — foundation, 3 of 4 steps done** (retrieval, database, tool server). The claim-to-file
+> **Status: Phase 2 — the agent loop runs end to end.** Phase 1 complete; the Maya and
+> Webex workflows are next. The claim-to-file
 > map below is the build contract. Rows
 > marked *planned* are not yet implemented and say so; no row claims behavior that does not
 > exist. This table and the code move in the same commit.
@@ -46,10 +47,10 @@ visible in the repository.
 | Tools are served over an MCP boundary, not called from the graph | [src/novaops/mcp_server/server.py](src/novaops/mcp_server/server.py) | done |
 | Caller identity reaches tools through the transport, not the model | [src/novaops/mcp_server/context.py](src/novaops/mcp_server/context.py) · [ADR-013](docs/DECISIONS.md) | done |
 | No tool can approve anything — only application code can | [ADR-014](docs/DECISIONS.md) · [tests/test_mcp_server.py](tests/test_mcp_server.py) | done |
-| `classify → scope → gather evidence → answer`, one graph, two scopes | `src/novaops/agent/graph.py` | planned — Phase 2 |
-| Scoped tool visibility — not every tool on every call | `src/novaops/agent/scopes.py` | planned — Phase 2 |
-| A write is released only against a persisted approval, never `action_confirmed` | `src/novaops/agent/write_gate.py` · [ADR-006](docs/DECISIONS.md#adr-006--authorization-reads-a-persisted-approval-row-action_confirmed-only-controls-visibility) | planned — Phase 2 |
-| Maya writes nothing — enforced as a checked condition, not a folder boundary | `src/novaops/agent/write_gate.py` | planned — Phase 3 |
+| `classify → scope → gather evidence → answer`, one graph, two scopes | [src/novaops/agent/graph.py](src/novaops/agent/graph.py) | done |
+| Scoped tool visibility — not every tool on every call | [src/novaops/agent/scopes.py](src/novaops/agent/scopes.py) · [policy.py](src/novaops/agent/policy.py) | done — 4 tools vs 10 on two real questions |
+| A write is released only against a persisted approval, never `action_confirmed` | [src/novaops/agent/write_gate.py](src/novaops/agent/write_gate.py) · [ADR-017](docs/DECISIONS.md) | done |
+| Maya writes nothing — enforced as a checked condition, not a folder boundary | [src/novaops/agent/scopes.py](src/novaops/agent/scopes.py) `writes_allowed=False` | done |
 | Every claim carries a citation | `src/novaops/contracts/common.py` | planned — Phase 3 |
 | Webex reported as blocked at 42-of-40 seats | `src/novaops/agent/scopes.py` | planned — Phase 3 |
 | Existing records reused, never duplicated | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-011](docs/DECISIONS.md) | done |
@@ -57,7 +58,7 @@ visible in the repository.
 | Approvals are recordable — the tool no lesson provides | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-012](docs/DECISIONS.md) | done |
 | `W-I-02`'s missing capability is reported, not invented | [src/novaops/db/repositories.py](src/novaops/db/repositories.py) | done |
 | A pending approval survives the process being killed | `src/novaops/agent/graph.py` | planned — Phase 4 |
-| Spans named so a reader can follow classify → scope → tools → answer | `src/novaops/observability/` | planned — Phase 2 |
+| Spans named so a reader can follow classify → scope → tools → answer | [src/novaops/observability/tracing.py](src/novaops/observability/tracing.py) | done |
 
 ### Evidence we wrote ourselves
 

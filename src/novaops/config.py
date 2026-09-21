@@ -15,9 +15,12 @@ import os
 from datetime import date
 from pathlib import Path
 
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
 
-load_dotenv(find_dotenv())
+# The repository's own .env, by path rather than by search. `find_dotenv()` walks the
+# caller's stack, which works from a module and fails from a piped script or a notebook
+# cell — a difference that shows up as "my keys are missing" rather than as an error.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 # 1. THE PINNED CLOCK --------------------------------------------------------

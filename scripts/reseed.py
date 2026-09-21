@@ -30,9 +30,16 @@ def reseed(*, drop_checkpoints: bool = False) -> None:
     config.ensure_var_dir()
     config.BUSINESS_DB.unlink(missing_ok=True)
 
-    with sqlite3.connect(config.BUSINESS_DB) as connection:
+    # `with sqlite3.connect(...)` manages the TRANSACTION, not the connection — it
+    # commits and leaves the handle open. On Windows that open handle blocks the next
+    # reseed from deleting the file, so the close is explicit.
+    connection = sqlite3.connect(config.BUSINESS_DB)
+    try:
         connection.executescript(config.SCHEMA_SQL.read_text(encoding="utf-8"))
         connection.executescript(config.SEED_SQL.read_text(encoding="utf-8"))
+        connection.commit()
+    finally:
+        connection.close()
 
     if drop_checkpoints:
         # Only for a genuinely fresh start. Dropping this mid-session destroys a pending
@@ -51,14 +58,17 @@ def main(argv: list[str] | None = None) -> int:
 
     reseed(drop_checkpoints=args.checkpoints)
 
-    with sqlite3.connect(config.BUSINESS_DB) as connection:
+    connection = sqlite3.connect(config.BUSINESS_DB)
+    try:
         tables = connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         ).fetchall()
         counts = {
-            name: connection.execute(f"SELECT count(*) FROM {name}").fetchone()[0]
+            name: connection.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608
             for (name,) in tables
         }
+    finally:
+        connection.close()
 
     print(f"reseeded {config.BUSINESS_DB}")
     for name, count in counts.items():

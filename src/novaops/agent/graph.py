@@ -1,0 +1,237 @@
+"""The agent loop: one graph, two scopes.
+
+    START ─▶ needs distilling? ─▶ distil ─▶ classify ─▶ scope ─▶ model ─▶ tools
+                  │ no                          ▲                  │        │
+                  └─────────────────────────────┘                  └────────┘
+                                                        (rearm on a missed lookup)
+
+Lesson 10 stage 3's mechanics, with three changes this project requires:
+
+**A durable checkpointer.** `AsyncSqliteSaver`, not `InMemorySaver`. Milestone 4 is done
+only when a killed process resumes a pending approval, and an in-memory saver cannot do
+that. It is wired from the first commit rather than swapped in later, because approval
+state has to be *shaped* for durability, and discovering that late means reshaping it
+after the workflows are written.
+
+**A scope node.** Which tools are visible is decided by deterministic code from the
+plan's intent and the scope's authority — not by the model, and not by a second router.
+`classify` is the router.
+
+**A write gate between scope and model.** It consults the database, never the plan. See
+`write_gate.py`.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from langchain_core.messages import (
+    HumanMessage,
+    RemoveMessage,
+    SystemMessage,
+    ToolMessage,
+)
+from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode
+
+from novaops.agent.policy import (
+    ConversationMemory,
+    TurnPlan,
+    answer_prompt,
+    conversation_window,
+    distiller_messages,
+    memory_is_safe,
+    needs_distillation,
+    planner_messages,
+    read_tools,
+    render_plan,
+)
+from novaops.agent.scopes import get_scope
+from novaops.agent.state import AgentState
+from novaops.agent.write_gate import GateDecision, release_writes
+from novaops.llm.client import get_model
+
+
+def used_tool_this_turn(messages: list) -> bool:
+    """Did any tool run since the user's last message?"""
+
+    boundaries = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
+    current = messages[boundaries[-1]:] if boundaries else messages
+    return any(isinstance(m, ToolMessage) for m in current)
+
+
+def build_graph(
+    tools: list,
+    checkpointer,
+    *,
+    open_db=None,
+):
+    """Compile the agent.
+
+    `tools` are the MCP tool objects the agent may ever use; `open_db` returns a
+    connection for the write gate to consult. Both are injected rather than imported, so
+    the graph has no opinion about where either comes from — and so a test can hand it a
+    temporary database without monkeypatching.
+    """
+
+    if open_db is None:
+        from novaops.db.connection import connect as open_db  # noqa: N813
+
+    base_model = get_model()
+    by_name = {tool.name: tool for tool in tools}
+    catalogue = sorted(by_name)
+
+    planner = get_model().with_structured_output(TurnPlan, include_raw=True)
+    distiller = get_model().with_structured_output(ConversationMemory, include_raw=True)
+
+    bound_cache: dict[tuple, Any] = {}
+
+    def model_for(names: list[str]):
+        """Bind a tool subset once per distinct subset. Binding is not free."""
+
+        key = tuple(sorted(names))
+        if key not in bound_cache:
+            bound_cache[key] = (
+                base_model.bind_tools([by_name[n] for n in key]) if key else base_model
+            )
+        return bound_cache[key]
+
+    # 1. DISTIL -------------------------------------------------------------
+    async def distil(state: AgentState) -> dict:
+        """Compress history into structured memory once it grows past the threshold.
+
+        Never deletes a message. Distillation changes what gets *sent*, and the raw
+        history stays in state — so a summary that loses something costs tokens on the
+        next turn rather than costing the evidence.
+        """
+
+        result = await distiller.ainvoke(distiller_messages(state))
+        updated = result["parsed"]
+        if updated is None or not memory_is_safe(state.get("memory") or {}, updated):
+            return {}  # keep the old memory AND the raw history
+        return {
+            "memory": updated.model_dump(),
+            "distilled_upto": len(state["messages"]),
+        }
+
+    # 2. CLASSIFY — this is the router --------------------------------------
+    async def classify(state: AgentState) -> dict:
+        result = await planner.ainvoke(planner_messages(state))
+        plan = result["parsed"] or TurnPlan(current_intent="other", requires_tools=True)
+        return {"plan": plan.model_dump()}
+
+    # 3. SCOPE — deterministic; the only node that spends no model call ------
+    def scope(state: AgentState) -> dict:
+        """Decide which tools this turn may see, and whether a write is released.
+
+        Two separate decisions, deliberately adjacent so the difference is visible:
+        `visible_reads` may reflect what the model inferred, `release_writes` may not.
+        """
+
+        plan = TurnPlan(**state["plan"])
+        active = get_scope(state.get("scope", "maya"))
+
+        loadout = (
+            active.visible_reads(plan.current_intent, catalogue)
+            if (plan.requires_tools or plan.action_confirmed)
+            else []
+        )
+
+        connection = open_db()
+        try:
+            decision: GateDecision = release_writes(
+                scope=active,
+                intent=plan.current_intent,
+                request_id=state.get("pending_request_id"),
+                connection=connection,
+                catalogue=catalogue,
+            )
+        finally:
+            connection.close()
+
+        return {
+            "loadout": sorted(set(loadout) | set(decision.released)),
+            "rearmed": False,
+            "gate_reason": decision.reason,
+            "gate_released": decision.released,
+        }
+
+    # 4. MODEL --------------------------------------------------------------
+    def call_model(state: AgentState) -> dict:
+        plan = TurnPlan(**state["plan"])
+        active = get_scope(state.get("scope", "maya"))
+        messages = [
+            SystemMessage(answer_prompt(active) + render_plan(plan)),
+            *conversation_window(state["messages"]),
+        ]
+        response = model_for(state["loadout"]).invoke(messages)
+        return {"messages": [response]}
+
+    # 5. REARM — the model answered without the lookup it said it needed ----
+    def rearm(state: AgentState) -> dict:
+        """Reopen the read catalogue once, and delete the answer produced without it.
+
+        Never reopens a write: a write released by the gate stays released, and one that
+        was not is not granted here as a side effect of a retry.
+        """
+
+        allowed = sorted(set(read_tools(catalogue)) | set(state.get("gate_released") or []))
+        return {
+            "loadout": allowed,
+            "rearmed": True,
+            "messages": [RemoveMessage(id=state["messages"][-1].id)],
+        }
+
+    def route(state: AgentState) -> str:
+        last = state["messages"][-1]
+        if getattr(last, "tool_calls", None):
+            return "tools"
+        plan = TurnPlan(**state["plan"])
+        missed_lookup = (
+            plan.requires_tools
+            and not state.get("rearmed")
+            and not used_tool_this_turn(state["messages"])
+        )
+        return "rearm" if missed_lookup else END
+
+    # 6. WIRING -------------------------------------------------------------
+    graph = StateGraph(AgentState)
+    graph.add_node("distil", distil)
+    graph.add_node("classify", classify)
+    graph.add_node("scope", scope)
+    graph.add_node("model", call_model)
+    graph.add_node("rearm", rearm)
+    graph.add_node("tools", ToolNode(tools))
+
+    graph.add_conditional_edges(
+        START,
+        lambda s: "distil" if needs_distillation(s) else "classify",
+        {"distil": "distil", "classify": "classify"},
+    )
+    graph.add_edge("distil", "classify")
+    graph.add_edge("classify", "scope")
+    graph.add_edge("scope", "model")
+    graph.add_conditional_edges("model", route, {"tools": "tools", "rearm": "rearm", END: END})
+    graph.add_edge("rearm", "model")
+    graph.add_edge("tools", "model")
+
+    return graph.compile(checkpointer=checkpointer)
+
+
+def sqlite_checkpointer(path=None):
+    """The durable checkpointer, as an async context manager.
+
+    Kept here so callers do not each decide where checkpoints live, and so the choice of
+    a file-backed saver is visible next to the graph it protects.
+    """
+
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    from novaops import config
+
+    target = path or config.CHECKPOINT_DB
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return AsyncSqliteSaver.from_conn_string(str(target))
+
+
+__all__ = ["build_graph", "sqlite_checkpointer"]

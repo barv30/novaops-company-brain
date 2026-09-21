@@ -158,6 +158,11 @@ rather than a model call is itself part of the design being assessed.
   `action_confirmed`) and **authorization** (whether a write may be released — reads *only* a
   persisted approval row, fails closed). Never release a write on `action_confirmed`.
 - Use `AsyncSqliteSaver`, never `InMemorySaver`. The restart test cannot pass otherwise.
+- **Two stores persist between runs, not one.** `var/novaops.db` holds business records and
+  `var/checkpoints.db` holds conversation history per `thread_id`. An independent case needs
+  a fresh database *and* an unused thread id; reusing a thread id replays last run's history,
+  the planner sets `requires_tools=False`, and the turn uses no tools. That reads as a broken
+  loadout and is stale state.
 - Async throughout — the MCP tools are async-only.
 
 ## Working rules for the agent

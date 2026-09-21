@@ -14,6 +14,7 @@ dependencies = [
     # Orchestration
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",   # AsyncSqliteSaver — durable approvals (ADR-007)
+    "langchain>=0.3",                     # required by langfuse.langchain (the trace callback)
     # Tools behind a server boundary, fixed by the assessment
     "mcp>=1.2",
     "langchain-mcp-adapters>=0.1",

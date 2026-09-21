@@ -486,6 +486,85 @@ not. That is the single divergence from the lesson pattern, and the README names
 
 ---
 
+## ADR-017 · The write gate takes no model output, by signature
+
+**Date:** 2026-09-21 · **Status:** accepted · **Implements ADR-006**
+
+**Context.** ADR-006 decided that a write is released only against a recorded approval.
+Implementing it raised a question the decision did not settle: how does a reviewer *verify*
+that no model output reaches that decision?
+
+**Decision.** `release_writes()` takes `scope`, `intent`, `request_id`, a database connection
+and the tool catalogue. It takes no plan, no message, no transcript and no model output. Four
+conditions must all hold, and any one failing releases nothing:
+
+1. the scope allows writes — Maya never does;
+2. the intent is actionable;
+3. an approval record exists for the request;
+4. **every** approval on that request is granted.
+
+**Reasoning.** The property becomes a property of the signature rather than of the prompt, or
+of a code path a reviewer has to trace. `tests/test_write_gate.py` proves all four conditions
+without invoking a model at all, which is the argument: if no model is needed to test it, no
+model can influence it.
+
+Condition 4 is the one that matters in practice. `AR001` carries two outstanding approvals,
+`AP001` (IT Manager) and `AP002` (Finance). A gate asking "is there an approved row?" opens on
+half a decision; this one asks "is anything still outstanding?" and does not.
+
+**Consequences.** The caller must supply `request_id` in state, so Webex has to identify the
+request a turn concerns before a write can be released — the right order anyway.
+`GateDecision` carries its reason into the trace, because a gate that silently declines is
+indistinguishable from one that is broken.
+
+---
+
+## ADR-018 · Two stores persist between runs; an independent case needs both reset
+
+**Date:** 2026-09-21 · **Status:** accepted
+
+**Context.** Found by a test that passed alone and failed in the suite. The specification warns
+that "a new conversation thread does not reset the database" — but **two** stores have that
+property and the second is easier to miss. `var/novaops.db` holds business records;
+`var/checkpoints.db` holds conversation history per `thread_id` and survives process restarts,
+which is the entire point of choosing a durable checkpointer (ADR-007).
+
+Reusing a thread id across runs replays the previous run's history. The planner sees the
+question already answered, sets `requires_tools=False`, and the turn correctly uses no tools.
+The trace then reads as a broken loadout and is in fact stale state.
+
+**Decision.** An independent case gets a reseeded database **and** a thread id nobody has used,
+or `python -m scripts.reseed --checkpoints`. Within a session the opposite holds: one thread,
+one database, every turn in order. Tests isolate both — the server fixtures copy the database,
+and `tests/test_agent_loop.py::ask` opens an in-memory checkpointer per turn.
+
+**Reasoning.** This would have corrupted the twenty-seven submission traces in a way that looks
+like a system defect rather than a harness defect — exactly the failure the specification warns
+about. Recorded in `CLAUDE.md` and `evals/README.md` as well as here, because the place it will
+be needed is the submission runner, which does not exist yet.
+
+**Consequences.** That runner must own thread-id generation rather than using case ids as
+thread ids, since case ids repeat across runs by design.
+
+---
+
+## ADR-019 · A stale `with sqlite3.connect(...)` leaked the reseed handle
+
+**Date:** 2026-09-21 · **Status:** accepted
+
+**Context.** `scripts/reseed.py` used `with sqlite3.connect(path) as connection:`. That context
+manager manages the **transaction**, not the connection: it commits and leaves the handle open.
+On Windows the open handle then blocks the next reseed from deleting the file, surfacing as
+`PermissionError: [WinError 32]` in whichever test happens to run second.
+
+**Decision.** Open and close explicitly in `try/finally`.
+
+**Reasoning.** Worth recording rather than fixing silently, because the same idiom appears
+throughout the lesson code and reads as correct. `novaops.db.connection.session()` already
+closed properly; this was the one place that did not.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.

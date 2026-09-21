@@ -39,3 +39,30 @@ number available while developing.
 
 `S1-quick-policy` is the smoke test — four turns, one tool call. If it fails, nothing
 downstream is worth debugging yet.
+
+## Running discipline — two kinds of state, and both bite
+
+The specification warns that "a new conversation thread does not reset the database".
+There is a second store with the same property, and it is easier to miss.
+
+**The business database** (`var/novaops.db`). Reseed before each independent case or
+session: `python -m scripts.reseed`. Several measured cases touch the same records, so
+running them back to back on one database lets the first case's write suppress the second.
+
+**The checkpointer** (`var/checkpoints.db`). This holds conversation history per
+`thread_id`, and it survives process restarts — that is the point of it. Reuse a thread id
+across runs and the planner replays against the previous run's history: it sees the
+question already answered, sets `requires_tools=False`, and the turn legitimately uses no
+tools. The trace then looks like a broken loadout and is actually stale state.
+
+So, for every independent case:
+
+- reseed the database, and
+- use a thread id nobody has used, or drop the checkpointer with
+  `python -m scripts.reseed --checkpoints`.
+
+Within a session, do the opposite: one thread, one database, every turn in order. That is
+what makes it a session rather than a sequence of one-shot calls.
+
+Tests isolate both — the server fixtures copy the database, and `ask()` in
+`tests/test_agent_loop.py` opens an in-memory checkpointer per turn.
