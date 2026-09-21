@@ -104,11 +104,15 @@ def turn_span(
     from langfuse import propagate_attributes
 
     client = _client()
+    # NOT "scope". Langfuse reserves that key for its own SDK descriptor, and a value
+    # put there is silently replaced by {'name': 'langfuse-sdk', ...} — so the chosen
+    # scope, which the specification requires in trace metadata, was absent from every
+    # trace until this was found by reading one back through the API.
     metadata = {
         "caller_id": caller_id,
         "user_group": user_group,
         "is_manager": str(is_manager),
-        "scope": scope,
+        "agent_scope": scope,
         "thread_id": thread_id,
         "request_id": request_id,
     }
@@ -152,6 +156,59 @@ class _NullSpan:
 
     def update(self, **fields: Any) -> None:  # noqa: D102
         return
+
+
+def score(
+    name: str,
+    value: float | str,
+    *,
+    comment: str | None = None,
+    data_type: str | None = None,
+) -> None:
+    """Attach a score to the trace currently open.
+
+    Lesson 11 asks for runs to be scored with deterministic checks first. A trace
+    carrying its own score is readable without opening the repository: a marker sees
+    "binding_checks 0.93" beside the run rather than having to reconstruct whether it
+    was right. Silent when Langfuse is not configured, so scoring a run offline is not
+    an error.
+    """
+
+    if not is_configured():
+        return
+    try:
+        _client().score_current_trace(
+            name=name, value=value, comment=comment, data_type=data_type  # type: ignore[arg-type]
+        )
+    except Exception:  # noqa: BLE001 — a failed score must never fail the run
+        pass
+
+
+def score_trace(
+    trace_id: str,
+    name: str,
+    value: float | str,
+    *,
+    comment: str | None = None,
+    data_type: str | None = None,
+) -> None:
+    """Attach a score to a trace that has already closed.
+
+    The evaluation harness scores a turn *after* the span has ended — the checks need
+    the finished answer — so scoring by id is the path that actually gets used.
+    """
+
+    if not is_configured():
+        return
+    try:
+        client = _client()
+        client.create_score(
+            name=name, value=value, trace_id=trace_id, comment=comment,
+            data_type=data_type,  # type: ignore[arg-type]
+        )
+        client.flush()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def trace_url() -> str | None:

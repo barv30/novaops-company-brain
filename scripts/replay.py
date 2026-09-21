@@ -27,6 +27,7 @@ from novaops.agent.scopes import MAYA, WEBEX
 from novaops.db import repositories
 from novaops.db.connection import connect
 from novaops.identity import build_caller
+from novaops.observability import tracing
 from scripts.reseed import reseed
 
 #: Which scope a session runs under. Maya and Webex are two scopes on one agent, and the
@@ -36,6 +37,38 @@ SESSION_SCOPE = {
     "S7-boundary-noisy": WEBEX,
     "S8-boundary-heavy-noise": WEBEX,
 }
+
+
+def _publish(trace_id: str | None, turn_score: scoring.TurnScore) -> None:
+    """Put this turn's deterministic result on its own trace.
+
+    Lesson 11 asks for runs scored with deterministic checks first. A trace carrying its
+    score is readable without the repository open: a marker sees the number beside the
+    run, and the comment names which expectation failed rather than leaving them to
+    reconstruct it.
+    """
+
+    if not trace_id:
+        return
+
+    passed = len(turn_score.checks) - len(turn_score.failures)
+    total = len(turn_score.checks) or 1
+    failures = "; ".join(f"{c.field}: {c.expectation}" for c in turn_score.failures)
+
+    tracing.score_trace(
+        trace_id,
+        "binding_checks",
+        passed / total,
+        comment=failures or "all binding checks passed",
+        data_type="NUMERIC",
+    )
+    tracing.score_trace(
+        trace_id,
+        "turn_clean",
+        "pass" if turn_score.passed else "fail",
+        comment=failures or None,
+        data_type="CATEGORICAL",
+    )
 
 
 def _parse_turns(spec: str | None, total: int) -> set[int]:
@@ -105,17 +138,17 @@ async def replay(
             print(f"  < {' '.join(outcome.answer.split())[:300]}")
 
             if turn.binds_anything:
-                result.turns.append(
-                    scoring.score_turn(
-                        turn,
-                        answer=outcome.answer,
-                        tools_used=outcome.tools_used,
-                        sources=outcome.sources,
-                        intent=outcome.intent,
-                        requires_tools=(outcome.state.get("plan") or {}).get("requires_tools"),
-                        rearmed=bool(outcome.state.get("rearmed")),
-                    )
+                turn_score = scoring.score_turn(
+                    turn,
+                    answer=outcome.answer,
+                    tools_used=outcome.tools_used,
+                    sources=outcome.sources,
+                    intent=outcome.intent,
+                    requires_tools=(outcome.state.get("plan") or {}).get("requires_tools"),
+                    rearmed=bool(outcome.state.get("rearmed")),
                 )
+                result.turns.append(turn_score)
+                _publish(outcome.trace_id, turn_score)
 
     print(result.report(verbose=verbose))
     return result

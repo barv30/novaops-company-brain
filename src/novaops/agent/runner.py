@@ -193,8 +193,16 @@ async def answer(
                     "`python -m scripts.reseed --checkpoints`."
                 )
 
+        # A distinctive name per trace. Every trace was previously called "maya.turn",
+        # so a marker matching twenty-seven rows of SUBMISSION.md against the project saw
+        # twenty identically-named runs and had to open each one. "M-S-01 t9 · maya"
+        # identifies itself in the list.
+        label = " · ".join(
+            part for part in (case_id, f"t{turn}" if turn is not None else None, scope)
+            if part
+        )
         with tracing.turn_span(
-            name=f"{scope}.turn",
+            name=label or f"{scope}.turn",
             caller_id=caller.employee_id,
             user_group=caller.user_group,
             is_manager=caller.is_manager,

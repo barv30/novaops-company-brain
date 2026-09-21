@@ -67,7 +67,11 @@ visible in the repository.
 | `W-I-02`'s missing capability is reported, not invented | [src/novaops/db/repositories.py](src/novaops/db/repositories.py) | done |
 | A pending approval survives the process being killed | `src/novaops/agent/graph.py` | planned — Phase 4 |
 | An independent case cannot replay a previous run's history | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) `new_thread_id` / `expect_fresh` · [ADR-018](docs/DECISIONS.md) | done |
-| Spans named so a reader can follow classify → scope → tools → answer | [src/novaops/observability/tracing.py](src/novaops/observability/tracing.py) | done |
+| Spans named so a reader can follow classify → scope → tools → answer | [src/novaops/observability/tracing.py](src/novaops/observability/tracing.py) | done — verified by reading a trace back through the API |
+| Trace metadata carries caller, group, scope, tools, status, request id | [tracing.py](src/novaops/observability/tracing.py) `turn_span` | done |
+| Each trace is named for the case and turn it is | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) | done — `S1-quick-policy · t2 · maya` |
+| Runs are scored with deterministic checks on the trace itself | [scripts/replay.py](scripts/replay.py) `_publish` · [tracing.py](src/novaops/observability/tracing.py) `score_trace` | done |
+| The test suite never writes into the submission project | [tests/conftest.py](tests/conftest.py) | done |
 
 ### Evidence we wrote ourselves
 
