@@ -83,8 +83,14 @@ INTENT_GLOSS = (
 # No write tool appears here. Writes are released only by write_gate.py.
 
 LOADOUTS: dict[str, list[str] | None] = {
+    # `search_handbook` belongs here as well as under career questions. "What does the
+    # manager's guide say about X" classifies as a policy question about as often as a
+    # career one, and without this tool the turn cannot discover that the guide is
+    # restricted — it searches policies instead, finds something adjacent, and answers
+    # as though it had been asked about that. Measured on `S9` turn 4.
     "policy_question": [
         "list_policies", "get_policy", "search_policies", "search_knowledge_base",
+        "search_handbook",
     ],
     "benefits_question": ["search_handbook", "search_policies", "get_policy"],
     "career_question": ["search_handbook", "search_policies"],

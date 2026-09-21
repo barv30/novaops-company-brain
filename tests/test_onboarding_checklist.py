@@ -136,6 +136,25 @@ def test_reserved_equipment_is_reported(maya):
     assert any(c.record == "A005" for i in equipment for c in i.citations)
 
 
+def test_inventory_items_are_distinguishable_from_the_task(maya):
+    """Two items exist for the same laptop and must not be confused.
+
+    OT003 is the provisioning task, due 2026-07-26. A005 is the physical machine sitting
+    reserved. An inventory item named simply "Laptop — MacBook Pro 14" reads like the
+    task minus its due date, and an answer then reports "no due date specified" while
+    the date sits on the other item.
+    """
+
+    equipment = [i for i in maya.items if i.category == "equipment"]
+    assert equipment
+    for item in equipment:
+        assert "reserved in inventory" in item.name or "assigned" in item.name, item.name
+        assert item.due_date is None, "inventory has no due date; the task carries it"
+
+    task = next(i for i in maya.items if "prepare laptop" in i.name.lower())
+    assert task.due_date == "2026-07-26"
+
+
 def test_owner_groups_are_carried_through(maya):
     """Who has to act is part of the answer."""
 

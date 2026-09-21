@@ -73,18 +73,27 @@ def _search(
     corpora: list[str] | None,
     k: int | None = None,
 ) -> list[dict[str, Any]]:
-    """One retrieval path for every search tool, so the filter cannot be forgotten."""
+    """One retrieval path for every search tool, so the filter cannot be forgotten.
+
+    Where a collection was excluded because this caller may not read it, the result says
+    so. That is not a leak, and the distinction matters: the *contents* of
+    `manager_playbook/` are restricted, the *fact that it exists* is not. Without the
+    notice the model cannot tell "there is nothing on this" from "there is something and
+    it is not yours", so it goes quiet and answers from somewhere else — measured on
+    `S9` turn 4, where Maya names the manager's guide directly and is owed a plain
+    answer that it is not available to her.
+    """
 
     with _db() as connection:
         caller = resolve_caller(ctx, connection)
+
     store = _store()
+    allowed = visible_ids(store.chunks, caller)
     hits: list[SearchHit] = store.search(
-        query,
-        k=k or config.RETRIEVAL_TOP_K,
-        allowed_ids=visible_ids(store.chunks, caller),
-        corpora=corpora,
+        query, k=k or config.RETRIEVAL_TOP_K, allowed_ids=allowed, corpora=corpora
     )
-    return [
+
+    results = [
         {
             "source": hit.chunk.source,
             "heading": hit.chunk.heading,
@@ -94,6 +103,46 @@ def _search(
         }
         for hit in hits
     ]
+
+    for collection in _excluded_collections(store, caller, corpora):
+        results.append(
+            {
+                "source": f"(withheld: {collection})",
+                "heading": None,
+                "score": None,
+                "last_updated": None,
+                # Deliberately terse and non-imperative. A longer, instruction-shaped
+                # notice hijacked turns where the caller had not asked for restricted
+                # material at all: it fires on every search of a corpus with a
+                # restricted collection in it, so most of the time the right response
+                # is to ignore it and answer the question that was asked.
+                "text": (
+                    f"Note: the '{collection}' collection is restricted and was not "
+                    f"searched. Mention this only if the user specifically asked for "
+                    f"that material, in which case say it is not available to them."
+                ),
+            }
+        )
+    return results
+
+
+def _excluded_collections(
+    store: FaissStore, caller: Caller, corpora: list[str] | None
+) -> list[str]:
+    """Collections this search would have covered but the caller may not read.
+
+    Reports the collection name only — never a document path, a heading or a line of
+    text — so the notice cannot become the leak it exists to prevent.
+    """
+
+    wanted = set(corpora) if corpora else None
+    withheld: set[str] = set()
+    for chunk in store.chunks:
+        if wanted is not None and chunk.corpus not in wanted:
+            continue
+        if not caller.may_read(chunk.audience):
+            withheld.add(chunk.corpus)
+    return sorted(withheld)
 
 
 def _caller(ctx: Context | None) -> Caller:

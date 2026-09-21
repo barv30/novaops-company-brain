@@ -9,9 +9,10 @@ actions. Built as the AI Engineer capstone against
 Workflows 3 (Vendor) and 4 (Renewal) and the Lesson 12/14 stages are not attempted — see
 [ADR-001](docs/DECISIONS.md#adr-001--build-the-required-path-only).
 
-> **Status: Phase 3 — Maya.** `S1` passes 11/11 checks, 4/4 turns. `S2` scores 39–41 of 43
-> checks and 9–10 of 12 turns, varying by run — see [ADR-022](docs/DECISIONS.md) for what
-> that variance is and what is being done about it. `S9` not yet run. The claim-to-file
+> **Status: Phase 3 — Maya.** `S1` 11/11 checks. `S2` 37–41 of 43. `S9` 31–32 of 33, with
+> both permission traps holding every run. The ranges are real run-to-run variance in one
+> planner decision — see [ADR-022](docs/DECISIONS.md) for how broken turns are told apart
+> from flaky ones, and what each gets done about it. The claim-to-file
 > map below is the build contract. Rows
 > marked *planned* are not yet implemented and say so; no row claims behavior that does not
 > exist. This table and the code move in the same commit.
@@ -45,6 +46,9 @@ visible in the repository.
 | Every model call goes through one seam | `src/novaops/llm/client.py` | done |
 | `audience` survives ingest and is filtered at the retrieval layer | [src/novaops/retrieval/documents.py](src/novaops/retrieval/documents.py) | done |
 | `manager_playbook` never reaches a non-manager | [src/novaops/retrieval/filters.py](src/novaops/retrieval/filters.py) · [store.py](src/novaops/retrieval/store.py) · [ADR-010](docs/DECISIONS.md) | done |
+| A withheld collection is named to the caller, never quoted | [src/novaops/mcp_server/server.py](src/novaops/mcp_server/server.py) `_excluded_collections` | done |
+| A turn's retrieval refinement is bounded | [src/novaops/agent/graph.py](src/novaops/agent/graph.py) · `config.MAX_TOOL_ROUNDS` | done — 38 calls → 2 |
+| The typed checklist is served over the tool boundary | [src/novaops/mcp_server/server.py](src/novaops/mcp_server/server.py) `get_onboarding_checklist` | done |
 | Tools are served over an MCP boundary, not called from the graph | [src/novaops/mcp_server/server.py](src/novaops/mcp_server/server.py) | done |
 | Caller identity reaches tools through the transport, not the model | [src/novaops/mcp_server/context.py](src/novaops/mcp_server/context.py) · [ADR-013](docs/DECISIONS.md) | done |
 | No tool can approve anything — only application code can | [ADR-014](docs/DECISIONS.md) · [tests/test_mcp_server.py](tests/test_mcp_server.py) | done |

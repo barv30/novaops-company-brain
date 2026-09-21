@@ -108,11 +108,19 @@ def _equipment_items(connection: sqlite3.Connection, employee: dict) -> list[Che
         reserved = (full in notes or surname in notes) and asset.get("status") == "available"
         if not (assigned or reserved):
             continue
+        # Named so it cannot be mistaken for the provisioning task. Both exist for the
+        # same laptop — OT003 "Prepare laptop, monitor, dock and MDM enrollment", due
+        # 2026-07-26, and A005 the physical machine — and an item called simply
+        # "Laptop — MacBook Pro 14" reads like the task without the task's due date.
+        # Measured on `S9` turn 5, where the answer reported "no due date specified"
+        # while the date sat on the other item.
+        state = "assigned" if assigned else "reserved in inventory"
         items.append(
             ChecklistItem(
-                name=f"{asset['asset_type']} — {asset['model']}",
+                name=f"{asset['asset_type']} {state}: {asset['model']}",
                 category="equipment",
                 status=ItemStatus.DONE if assigned else ItemStatus.PENDING,
+                blocked_reason=None,
                 owner_group="UG_IT",
                 citations=[Citation(record=asset["asset_id"], source="database/assets")],
             )

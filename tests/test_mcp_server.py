@@ -131,7 +131,8 @@ async def test_an_unidentified_caller_reaches_nothing_restricted(server):
     restricted corpus stays out of reach. ADR-015."""
 
     result = text_of(await call(server, None, "search_handbook", {"query": "promotion"}))
-    assert "manager_playbook" not in result
+    # The collection name may appear in a withheld notice; a document path may not.
+    assert "manager_playbook/" not in result
     assert "handbook/" in result
 
 
@@ -139,7 +140,7 @@ async def test_an_unknown_employee_id_buys_nothing(server):
     """An id nobody recognises is a claim we cannot verify, so it grants no privilege."""
 
     result = text_of(await call(server, "E999", "search_handbook", {"query": "promotion"}))
-    assert "manager_playbook" not in result
+    assert "manager_playbook/" not in result
 
 
 async def test_every_tool_answers_an_unidentified_caller(server):
@@ -192,7 +193,7 @@ async def test_the_manager_playbook_never_reaches_a_regular_employee(server):
             {"query": "How do I get promoted here? What does the path look like for a CSM?"},
         )
     )
-    assert "manager_playbook" not in result
+    assert "manager_playbook/" not in result
     assert "making-a-career" in result
 
 
@@ -202,7 +203,7 @@ async def test_a_manager_in_ug_regular_does_reach_it(server):
     result = text_of(
         await call(server, "E018", "search_handbook", {"query": "first 90 days feedback"})
     )
-    assert "manager_playbook" in result
+    assert "manager_playbook/" in result
 
 
 async def test_the_same_query_differs_only_by_who_asked(server):
@@ -211,8 +212,8 @@ async def test_the_same_query_differs_only_by_who_asked(server):
     query = {"query": "promotion readiness and evidence"}
     regular = text_of(await call(server, "E001", "search_handbook", query))
     manager = text_of(await call(server, "E018", "search_handbook", query))
-    assert "manager_playbook" not in regular
-    assert "manager_playbook" in manager
+    assert "manager_playbook/" not in regular, "a restricted document path leaked"
+    assert "manager_playbook/" in manager, "the manager could not reach the playbook"
 
 
 async def test_unrestricted_collections_reach_everyone(server):
@@ -222,6 +223,46 @@ async def test_unrestricted_collections_reach_everyone(server):
         await call(server, "E001", "search_knowledge_base", {"query": "webex licence not assigned"})
     )
     assert "it_kb/" in result
+
+
+async def test_a_withheld_collection_is_named_but_not_revealed(server):
+    """S9 turn 4: Maya names the manager's guide directly.
+
+    The filter must keep its contents out — and the answer must still tell her it is
+    not available to her, rather than going quiet and answering from the handbook as
+    though it were the same document. So the search result names the collection that was
+    excluded, and nothing else about it.
+    """
+
+    result = text_of(
+        await call(server, "E001", "search_handbook",
+                   {"query": "giving feedback in someone's first 90 days"})
+    )
+
+    assert "'manager_playbook' collection is restricted" in result, result[:400]
+    assert "not available to them" in result
+    # The notice names the collection. It must not carry a path, a heading or content.
+    assert "manager_playbook/" not in result
+    assert "giving-feedback.md" not in result
+
+
+async def test_no_notice_appears_when_nothing_was_withheld(server):
+    """A manager searching the same corpus is withholding nothing, so says nothing."""
+
+    result = text_of(
+        await call(server, "E018", "search_handbook",
+                   {"query": "giving feedback in someone's first 90 days"})
+    )
+    assert "withheld" not in result
+
+
+async def test_unrestricted_searches_carry_no_notice(server):
+    """The IT knowledge base is unrestricted; a notice there would be noise."""
+
+    result = text_of(
+        await call(server, "E001", "search_knowledge_base", {"query": "vpn access"})
+    )
+    assert "withheld" not in result
 
 
 # 3. THE TOOLS THE PROJECT NEEDED AND NO LESSON PROVIDED --------------------
