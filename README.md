@@ -9,7 +9,8 @@ actions. Built as the AI Engineer capstone against
 Workflows 3 (Vendor) and 4 (Renewal) and the Lesson 12/14 stages are not attempted — see
 [ADR-001](docs/DECISIONS.md#adr-001--build-the-required-path-only).
 
-> **Status: Phase 0 — scaffold.** The claim-to-file map below is the build contract. Rows
+> **Status: Phase 1 — foundation, 2 of 4 steps done** (retrieval, database). The claim-to-file
+> map below is the build contract. Rows
 > marked *planned* are not yet implemented and say so; no row claims behavior that does not
 > exist. This table and the code move in the same commit.
 
@@ -49,7 +50,10 @@ visible in the repository.
 | Maya writes nothing — enforced as a checked condition, not a folder boundary | `src/novaops/agent/write_gate.py` | planned — Phase 3 |
 | Every claim carries a citation | `src/novaops/contracts/common.py` | planned — Phase 3 |
 | Webex reported as blocked at 42-of-40 seats | `src/novaops/agent/scopes.py` | planned — Phase 3 |
-| Existing records reused, never duplicated | `src/novaops/db/` | planned — Phase 4 |
+| Existing records reused, never duplicated | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-011](docs/DECISIONS.md) | done |
+| Replaying a request creates no second row | [src/novaops/db/idempotency.py](src/novaops/db/idempotency.py) · [tests/test_db.py](tests/test_db.py) | done |
+| Approvals are recordable — the tool no lesson provides | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-012](docs/DECISIONS.md) | done |
+| `W-I-02`'s missing capability is reported, not invented | [src/novaops/db/repositories.py](src/novaops/db/repositories.py) | done |
 | A pending approval survives the process being killed | `src/novaops/agent/graph.py` | planned — Phase 4 |
 | Spans named so a reader can follow classify → scope → tools → answer | `src/novaops/observability/` | planned — Phase 2 |
 

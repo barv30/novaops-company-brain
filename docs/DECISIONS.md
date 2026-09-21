@@ -276,6 +276,84 @@ constraint as a `filter` clause, which is why it sits behind the `DocumentStore`
 
 ---
 
+## ADR-011 · Idempotency uses both natural-key matching and an application-owned ledger
+
+**Date:** 2026-09-21 · **Status:** accepted
+
+**Context.** "Every write is idempotent. Replaying a request creates no second ticket, access
+request, renewal, or notification." The supplied `schema.sql` has no idempotency column
+anywhere. Two distinct duplicates are possible, and they need different mechanisms:
+
+1. **The record already existed before this system ran.** `T001` and `AR001` are seeded rows
+   for Rachel Stein. Nothing we wrote could know about them, so only a match on natural keys —
+   employee plus system plus a live status — finds and reuses them.
+2. **We run our own request twice.** The evaluation harness replays a case; a retry fires. An
+   exact key is precise where a field comparison is a judgement call: two requests whose
+   justification text differs slightly are the same request, and no natural-key rule can be
+   trusted to say so.
+
+**Decision.** Both. Every write checks the ledger first, then attempts a natural-key reuse,
+then creates. The ledger is a table this application creates alongside the dataset's own:
+`idempotency_keys(key, entity_type, entity_id, reused, conversation_id, created_at)`.
+`schema.sql` is never edited and the dataset is never modified.
+
+**Reasoning.** Matching alone leaves an exact replay only *probably* safe. A ledger alone
+would duplicate `AR001`, because no entry exists for a row somebody else created. Each covers
+the other's blind spot. Every write returns a `WriteResult` whose `disposition` is `created`,
+`reused` or `replayed` — a distinction `AccessDecision.actions_taken` reports directly, and
+conflating it is how a system comes to claim it filed something it merely found.
+
+**Consequences.** One table beyond the supplied schema, created on demand by
+`idempotency.ensure_schema()`. A ledger entry can outlive its row across a reseed, so a lookup
+that resolves to a missing row is treated as an unused key rather than returning a phantom
+record — covered by a test. If Lesson 14 is ever attempted, this table is part of the durable
+write path and would move out of local SQLite with the rest.
+
+---
+
+## ADR-012 · Approval tools close the inventory gap the specification leaves open
+
+**Date:** 2026-09-21 · **Status:** accepted
+
+**Context.** §6.3: the inherited inventory is eleven tools, and "that is what you have. It is
+not everything you need. At least one capability the project requires has no tool behind it in
+any lesson." Reading the workflows against the schema identifies the gap precisely: **nothing
+writes to the `approvals` table**, yet the write gate must release a write only against a
+*recorded approval*, and `W-I-03` is described as the case that "exercises the approval path."
+
+A second gap sits in `W-I-02`. `software_subscriptions` records seat counts only; there is no
+employee-to-seat table. `systems_allowed_by_role` lists entitlement, which looks exactly like
+the answer and is not — reading it reports access for the two people whose access is actually
+blocked. The spec asks us to "represent the missing capability in the system — a tool that
+reports the gap."
+
+**Decision.** Build four capabilities the lessons do not provide:
+
+| Capability | Why it must exist |
+| --- | --- |
+| `request_approval` | Persists a *request for a decision* as `pending`. The thing the gate later reads. |
+| `record_decision` | The only function that can move an approval to `approved`. Takes a boolean supplied by the application from a human's `interrupt()` response — never from a model. |
+| `seat_assignment_gap` | Returns `seat_assignments_recorded: False` plus what *is* on record, so the honest answer to `W-I-02` rests on a tool result rather than on model restraint. |
+| `get_contract` / `seat_position` | The 40-seat limit is a contractual fact; reporting "42 of 40" without the agreement it comes from is an assertion, not evidence. |
+
+**Reasoning.** Separating `request_approval` from `record_decision` is the structural form of
+the project's second invariant. Asking for a decision is something the workflow may do
+freely; making one is something only a human does. If one function did both, the gate would
+be one argument away from being opened by the caller that requested it.
+
+**Evidence.** Two facts from the seeded data shaped this. `AR001` carries **two** outstanding
+approvals — `AP001` (IT Manager, E006) and `AP002` (Finance, E011) — so "is it approved?" is
+not one row lookup. And `approvals.status` takes both `needed` and `pending` in the seed, so
+the gate reads a strict allowlist (`approved`, `granted`) rather than testing for a negative:
+a denylist fails open the first time an unseen value appears.
+
+**Consequences.** More surface than the eleven inherited tools, and `seat_assignment_gap`
+returns a shape no lesson demonstrates. Both are deliberate and documented here because a
+reviewer comparing our inventory against Lesson 10's will otherwise read the difference as
+drift rather than as the gap being closed.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.
