@@ -93,19 +93,37 @@ async def load_tools(caller: Caller, url: str | None = None) -> list:
     return await client.get_tools()
 
 
+def _this_turn(messages: list) -> list:
+    """Only the messages produced since the user's newest message.
+
+    `messages` is the whole thread — the accumulated history, not this turn's slice.
+    Reading it whole reports every tool ever called on the thread as if it had run now,
+    which makes a turn that correctly used no tools look like one that used two. The
+    per-turn expectations in `GOLDEN-DATASETS.json` are per turn, so this is where the
+    turn boundary has to be drawn.
+    """
+
+    boundaries = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
+    return messages[boundaries[-1]:] if boundaries else list(messages)
+
+
 def _tools_used(messages: list) -> list[str]:
     """The tool names that ran this turn, in order."""
 
-    return [m.name for m in messages if isinstance(m, ToolMessage) and m.name]
+    return [m.name for m in _this_turn(messages) if isinstance(m, ToolMessage) and m.name]
 
 
 def _sources(messages: list) -> list[str]:
-    """Document paths that reached the model, for the citation checks in `evals/`."""
+    """Document paths that reached the model this turn.
+
+    Used for the `expected_sources` and `forbidden_sources` checks, which are
+    retrieval-layer expectations: what *arrived*, not what the answer chose to cite.
+    """
 
     import re
 
     found: list[str] = []
-    for message in messages:
+    for message in _this_turn(messages):
         if isinstance(message, ToolMessage):
             for match in re.findall(r"[\w/-]+\.md", message_text(message)):
                 if match not in found:

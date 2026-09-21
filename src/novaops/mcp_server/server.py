@@ -30,7 +30,7 @@ restricted chunk is never a candidate — it is not retrieved and then withheld.
 
 from __future__ import annotations
 
-import sqlite3
+from contextlib import closing
 from functools import lru_cache
 from typing import Any
 
@@ -54,8 +54,16 @@ def _store() -> FaissStore:
     return FaissStore.load()
 
 
-def _db() -> sqlite3.Connection:
-    return connect()
+def _db():
+    """A connection that is actually closed when the block ends.
+
+    `with sqlite3.connect(...)` manages the TRANSACTION, not the connection: it commits
+    and leaves the handle open. A server doing that leaks one handle per tool call, and
+    on Windows those handles block `scripts/reseed.py` from deleting the database — so
+    the symptom is a replay that cannot reseed rather than an error here. ADR-019.
+    """
+
+    return closing(connect())
 
 
 def _search(
@@ -400,7 +408,7 @@ def create_ticket(
         priority: 'low', 'medium' or 'high'.
     """
     actor = _caller(ctx).employee_id if ctx is not None else None
-    with connect() as connection:
+    with closing(connect()) as connection:
         result = writes.create_ticket(
             connection,
             employee_id=employee_id,
@@ -441,7 +449,7 @@ def create_access_request(
         approver_id: Who should decide, when known.
     """
     actor = _caller(ctx).employee_id if ctx is not None else None
-    with connect() as connection:
+    with closing(connect()) as connection:
         result = writes.create_access_request(
             connection,
             employee_id=employee_id,
@@ -480,7 +488,7 @@ def request_approval(
         idempotency_key: A stable key including the conversation id.
     """
     actor = _caller(ctx).employee_id if ctx is not None else None
-    with connect() as connection:
+    with closing(connect()) as connection:
         result = writes.request_approval(
             connection,
             request_type=request_type,

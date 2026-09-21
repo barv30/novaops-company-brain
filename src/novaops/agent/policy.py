@@ -32,6 +32,14 @@ KEEP_VERBATIM_TURNS = 2
 DISTIL_AFTER_MESSAGES = 12
 DISTIL_AFTER_TOKENS = 2_500
 
+#: How much of each tool result the planner sees when deciding `requires_tools`.
+#: Wider than the 400 characters the lessons use, and the reason is measurable: a policy
+#: document runs past 1,000 characters, so a 400-character window shows the planner the
+#: preamble and hides the clause the user is now asking about. It then decides the
+#: answer is not in the conversation and pays for a second lookup of the same document.
+#: This is planner context only — the answering model sees the full tool result.
+PLANNER_TOOL_CHARS = 900
+
 
 # 1. INTENT VOCABULARY -------------------------------------------------------
 
@@ -175,10 +183,39 @@ PLANNER_PROMPT = (
     "driving tool choice.\n"
     "- Users paste emails, threads and signatures. Plan for the request inside, not the "
     "boilerplate, and not for other people's items quoted in the thread.\n"
-    "- requires_tools is False only for recaps and reasoning over facts already here. "
-    "You know nothing about NovaOps otherwise, so a first turn is almost always True.\n"
-    "- A DIFFERENT TOPIC needs a different document. Having retrieved the VPN article "
-    "does not answer a password question.\n"
+    "\n"
+    "requires_tools decides whether this turn spends a lookup. Get it right in BOTH "
+    "directions — a needless call costs latency and money, a missing one costs the "
+    "answer.\n"
+    "  The ONE test: could you QUOTE the answer from the text already written above? "
+    "Not 'is the topic familiar' — could you quote it. If you cannot quote it, it is "
+    "not here, and requires_tools is TRUE.\n"
+    "  SESSION MEMORY IS NOT A SOURCE. The memory block is a compressed SNAPSHOT of "
+    "earlier turns, not a document and not the current state of any record. It tells "
+    "you what the session is about; it does not tell you what any rule says or what any "
+    "record holds now. Treating a familiar-looking memory entry as the answer is the "
+    "single most common way this field is set wrongly — when in doubt, TRUE.\n"
+    "  FALSE only when the answer is verbatim above:\n"
+    "    * a follow-up about the SAME passage you just retrieved — its text is here, so "
+    "re-reading it adds nothing;\n"
+    "    * a recap, a summary, or 'say that again more briefly';\n"
+    "    * reasoning or arithmetic over numbers already quoted above;\n"
+    "    * an INSTRUCTION TO ACT on something already established — 'go ahead', 'file "
+    "it', 'do it now' — where the earlier turns already gathered who, what system and "
+    "why. Preparing an action is not researching one; you are not being asked a "
+    "question, so there is nothing to look up.\n"
+    "  TRUE whenever anything must be looked up:\n"
+    "    * a first turn — you know nothing about NovaOps otherwise;\n"
+    "    * a DIFFERENT topic, which needs a different document. Having retrieved the "
+    "equipment policy does not answer a spending-threshold question;\n"
+    "    * the user REFERRING BACK to something they said is not the same as the answer "
+    "being here. 'Given the freeze I mentioned, does this need Finance?' still needs the "
+    "rule that sets the threshold — the user named the topic, not the number;\n"
+    "    * any entitlement, rule, limit, threshold or amount you have not already seen "
+    "quoted;\n"
+    "    * anything asking what the state is NOW — what is still open, outstanding, "
+    "pending or assigned — because records change and a snapshot from an earlier turn "
+    "is not the current state.\n"
     "- action_confirmed only when this message says to go ahead."
 )
 
@@ -308,12 +345,19 @@ def render_memory(memory: dict) -> str:
     def bullets(items: list[str]) -> str:
         return "\n".join(f"  - {item}" for item in items) if items else "  - (none)"
 
+    # The labels are load-bearing. A block headed "Established facts" reads to the
+    # planner as knowledge in hand, so it concludes the answer is already present and
+    # skips the lookup — measured repeatedly on S2 turns 9 and 11. Saying so in a distant
+    # prompt paragraph did not survive; the caveat has to travel with the data.
     return (
         f"Session is about: {model.current_intent}\n"
-        f"Established facts:\n{bullets(model.important_facts)}\n"
-        f"Constraints in force:\n{bullets(model.active_constraints)}\n"
-        f"Decisions made:\n{bullets(model.decisions)}\n"
-        f"Still open:\n{bullets(model.unresolved_items)}"
+        f"SNAPSHOT from earlier turns — NOT a document, NOT the current state of any "
+        f"record, and NOT a source you may cite. Anything here may be out of date:\n"
+        f"{bullets(model.important_facts)}\n"
+        f"Constraints the user imposed (still binding):\n"
+        f"{bullets(model.active_constraints)}\n"
+        f"Decisions made and topics closed:\n{bullets(model.decisions)}\n"
+        f"Still open as of the snapshot:\n{bullets(model.unresolved_items)}"
     )
 
 
@@ -324,7 +368,8 @@ def planner_messages(state: dict) -> list:
     fresh = state["messages"][covered:-1]
     prompt = (
         f"Session memory:\n{render_memory(state.get('memory') or {})}\n\n"
-        f"Conversation since then:\n{render_transcript(fresh) or '(nothing new)'}\n\n"
+        f"Conversation since then:\n"
+        f"{render_transcript(fresh, tool_chars=PLANNER_TOOL_CHARS) or '(nothing new)'}\n\n"
         f"User's newest message:\n{message_text(state['messages'][-1])}"
     )
     return [SystemMessage(PLANNER_PROMPT), HumanMessage(prompt)]
@@ -355,6 +400,21 @@ ASSISTANT_PROMPT = (
     "Work to these rules:\n"
     "- CITE EVERY CLAIM. Each tool result carries a '[source: ...]' line or a record id; "
     "name it. An uncited claim is treated as unsupported.\n"
+    "- A SOURCE IS A DOCUMENT OR A RECORD. Never cite the user, the conversation, "
+    "'established facts', 'user constraint' or your own memory as the source of a rule, "
+    "threshold, entitlement, limit, amount or eligibility. The user naming a topic is "
+    "not evidence about it: if they mention a spend freeze, the number that freeze sets "
+    "is in a memo or a policy, and you must look it up and quote it. If you have a tool "
+    "available and find yourself about to assert a rule without a document behind it, "
+    "call the tool instead.\n"
+    "- State the actual VALUE, not that a value exists: the threshold, the seat count, "
+    "the date, the cost. 'Requires Finance approval' is half an answer; 'USD 18,400 "
+    "exceeds the USD 7,500 threshold, so Finance must approve' is the answer.\n"
+    "- NAME RECORDS BY ID AND STATUS, verbatim as the record gives them. 'Ticket T001 is "
+    "open', not 'there is a ticket'. 'Access request AR001 is blocked', not 'the request "
+    "is held up'. 'Pending approval', not 'waiting'. An id lets the reader go and look; a "
+    "paraphrase does not, and a paraphrased status is how a blocked request comes to "
+    "sound resolved.\n"
     "- Answer the user's CURRENT request. If they changed subject or closed a topic, do "
     "not keep working the old one.\n"
     "- A constraint the user states — a spending rule, an approval requirement, 'don't "
@@ -377,10 +437,14 @@ ASSISTANT_PROMPT = (
 #: prompt says — but a model that believes it can file things writes answers claiming it
 #: did, and the answer text is half of what is scored.
 MAYA_CLAUSE = (
-    "\nYOUR AUTHORITY: you may read, and you may NOT file anything. You have no tool "
-    "that creates a ticket, an access request or an approval. If the user asks you to "
-    "act, say precisely what you would file and who must approve it — then stop. Never "
-    "say or imply that you filed, created, submitted or granted anything."
+    "\nYOUR AUTHORITY: you prepare actions; you do not file them. You have no tool that "
+    "creates a ticket, an access request or an approval.\n"
+    "When the user asks you to act, do NOT apologise and do NOT refuse. Hand the work "
+    "over: state what you have prepared, name the system and the person it is for, name "
+    "who must approve it, and report its state as PENDING that approval. A prepared "
+    "request that is waiting on a human is a useful answer; 'I can't do that' is not.\n"
+    "Never say or imply that you filed, created, submitted, granted or completed "
+    "anything. 'Prepared and pending approval' is true; 'filed' is not."
 )
 
 #: Webex's authority clause. Note what it does not promise: having a write tool this
@@ -391,6 +455,19 @@ WEBEX_CLAUSE = (
     "say so plainly. NEVER state that access was granted. Keep three things apart: what "
     "the records show, what you actually did, and what should happen next. Reuse an "
     "existing ticket or request rather than creating a second one."
+)
+
+
+#: Appended to the system prompt on a rearm. Without it a rearm changes nothing that
+#: affects the model's decision — the loadout it already had was correct, and deleting
+#: the answer leaves identical context, so the retry reproduces the same answer. The
+#: retry has to differ in what the model is TOLD, not only in what it is offered.
+REARM_INSTRUCTION = (
+    "\n\nSTOP. You just answered this turn without calling a single tool, and this turn "
+    "needs evidence you do not have. Something in the question — a rule, a threshold, an "
+    "entitlement, a current record state — is not quotable from the conversation above. "
+    "Call a tool NOW and answer from its result. Do not answer from memory, from the "
+    "user's own words, or from a snapshot taken earlier in this conversation."
 )
 
 

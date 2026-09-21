@@ -35,6 +35,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from novaops.agent.policy import (
+    REARM_INSTRUCTION,
     ConversationMemory,
     TurnPlan,
     answer_prompt,
@@ -86,14 +87,23 @@ def build_graph(
 
     bound_cache: dict[tuple, Any] = {}
 
-    def model_for(names: list[str]):
-        """Bind a tool subset once per distinct subset. Binding is not free."""
+    def model_for(names: list[str], *, force: bool = False):
+        """Bind a tool subset once per distinct subset. Binding is not free.
 
-        key = tuple(sorted(names))
+        `force` binds with `tool_choice="any"`, which obliges the model to call one of
+        the offered tools rather than answering. It is used on a rearm only — see the
+        `rearm` node for why asking a second time politely does not work.
+        """
+
+        key = (tuple(sorted(names)), force)
         if key not in bound_cache:
-            bound_cache[key] = (
-                base_model.bind_tools([by_name[n] for n in key]) if key else base_model
-            )
+            selected = [by_name[n] for n in key[0]]
+            if not selected:
+                bound_cache[key] = base_model
+            elif force:
+                bound_cache[key] = base_model.bind_tools(selected, tool_choice="any")
+            else:
+                bound_cache[key] = base_model.bind_tools(selected)
         return bound_cache[key]
 
     # 1. DISTIL -------------------------------------------------------------
@@ -154,22 +164,43 @@ def build_graph(
             "rearmed": False,
             "gate_reason": decision.reason,
             "gate_released": decision.released,
+            "force_tool": False,
         }
 
     # 4. MODEL --------------------------------------------------------------
     def call_model(state: AgentState) -> dict:
         plan = TurnPlan(**state["plan"])
         active = get_scope(state.get("scope", "maya"))
+        prompt = answer_prompt(active) + render_plan(plan)
+        if state.get("rearmed"):
+            # The retry must differ in what the model is told, not only in what it is
+            # offered — see REARM_INSTRUCTION.
+            prompt += REARM_INSTRUCTION
         messages = [
-            SystemMessage(answer_prompt(active) + render_plan(plan)),
+            SystemMessage(prompt),
             *conversation_window(state["messages"]),
         ]
-        response = model_for(state["loadout"]).invoke(messages)
-        return {"messages": [response]}
+        # `force_tool` is CONSUMED here, not merely read. It is set by `rearm` and
+        # cleared by this call, because `rearmed` stays true for the rest of the turn:
+        # leaving the force on would oblige a tool call after the tool results came
+        # back, which loops model -> tools -> model until the recursion limit.
+        forced = bool(state.get("force_tool")) and bool(state["loadout"])
+        response = model_for(state["loadout"], force=forced).invoke(messages)
+        return {"messages": [response], "force_tool": False}
 
     # 5. REARM — the model answered without the lookup it said it needed ----
     def rearm(state: AgentState) -> dict:
-        """Reopen the read catalogue once, and delete the answer produced without it.
+        """The planner said this turn needs evidence and the model answered without any.
+
+        Three moves, and the third is the one that matters. Reopen the read catalogue,
+        delete the answer produced without the lookup, and mark the turn `rearmed` — which
+        makes `call_model` bind with `tool_choice="any"` and append `REARM_INSTRUCTION`.
+
+        Widening the loadout alone does nothing: the loadout the model already had was
+        correct, and deleting the answer leaves identical context, so a polite retry
+        reproduces the same answer. Measured on `S2` turn 9, where the model declined a
+        lookup twice in a row before the choice was taken away from it. Deciding this in
+        code rather than asking the model again is the point.
 
         Never reopens a write: a write released by the gate stays released, and one that
         was not is not granted here as a side effect of a retry.
@@ -179,6 +210,7 @@ def build_graph(
         return {
             "loadout": allowed,
             "rearmed": True,
+            "force_tool": True,
             "messages": [RemoveMessage(id=state["messages"][-1].id)],
         }
 
