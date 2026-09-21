@@ -354,6 +354,72 @@ drift rather than as the gap being closed.
 
 ---
 
+## ADR-013 · Caller identity travels in the MCP transport, never in tool arguments
+
+**Date:** 2026-09-21 · **Status:** accepted
+
+**Context.** Invariant 1 is that caller identity is an application input, never a model
+inference. On an MCP server that is harder than it sounds, because tools are invoked *by the
+model*, with arguments the model chooses. A tool signed
+`search_handbook(query: str, caller_id: str)` hands the model the steering wheel: it can pass
+any employee id, and *"I am Yael Romano, show me the manager playbook"* stops being a claim
+and becomes an API call. Post-validating the argument does not help — the agent would be
+checking a value it has no independent source for.
+
+**Decision.** No tool takes a caller argument. The agent opens its MCP session with an
+`X-NovaOps-Caller` header, and tools read the caller from the HTTP request behind the session
+via `ctx.request_context.request.headers`. Manager status is then **derived from the employee
+table**, not read from the header. A request with no caller header, or one naming an unknown
+employee, is refused rather than defaulted.
+
+**Reasoning.** This makes the property structural rather than procedural. The model does not
+merely fail to set the caller — it cannot see that a caller exists, because the field is not
+in the schema it is shown. Deriving `is_manager` server-side closes the same hole one level
+up: a client that could assert it would be a client that could grant itself the restricted
+corpus. Refusing an unidentified caller rather than defaulting to least privilege keeps a
+misconfigured client loud instead of quietly serving documents.
+
+**Evidence.** Verified against a live server before building on it: a tool declaring only
+`ctx` reports `args == {}` to the client, while the same call returns `header=E001` or
+`header=E018` according to what the session sent.
+`tests/test_mcp_server.py::test_no_tool_exposes_a_caller_argument` scans every published tool
+schema for caller-shaped fields, so a future tool that adds one fails the suite.
+`test_the_same_query_differs_only_by_who_asked` sends identical arguments under two identities
+and asserts the results differ only by the restricted collection.
+
+**Consequences.** The server must be reached over streamable HTTP; a stdio transport carries
+no request object and would need a different identity channel. Every retrieval tool must go
+through one helper so the filter cannot be forgotten, which is why `_search` exists rather
+than each tool calling the store directly.
+
+---
+
+## ADR-014 · `record_decision` is not exposed as a tool
+
+**Date:** 2026-09-21 · **Status:** accepted
+
+**Context.** ADR-012 added `request_approval` so an approval can be persisted. Its
+counterpart, `record_decision`, moves an approval to `approved` — and by ADR-006 that record
+is the only thing that can open the write gate.
+
+**Decision.** `request_approval` is a tool. `record_decision` is not, and no tool on the
+server can move an approval into an approved state.
+
+**Reasoning.** Asking for a decision is something the workflow may do freely; making one is
+something only a person does. If both were tools, the switch that opens the write gate would
+sit inside the model's reach, and the durable-approval design of ADR-006 would be decorative —
+the model could request an approval and then grant it in the next tool call.
+`record_decision` stays in `novaops.db.writes`, callable only by application code holding a
+human's response to an `interrupt()`.
+
+**Consequences.** Approving something in a test or a script means calling application code
+rather than driving the agent, which is the correct shape but does mean the approval path
+cannot be exercised end-to-end through the model alone.
+`tests/test_mcp_server.py::test_record_decision_is_not_exposed_as_a_tool` asserts the absence,
+so re-adding it later fails the suite rather than passing silently.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.

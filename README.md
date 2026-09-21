@@ -9,7 +9,7 @@ actions. Built as the AI Engineer capstone against
 Workflows 3 (Vendor) and 4 (Renewal) and the Lesson 12/14 stages are not attempted — see
 [ADR-001](docs/DECISIONS.md#adr-001--build-the-required-path-only).
 
-> **Status: Phase 1 — foundation, 2 of 4 steps done** (retrieval, database). The claim-to-file
+> **Status: Phase 1 — foundation, 3 of 4 steps done** (retrieval, database, tool server). The claim-to-file
 > map below is the build contract. Rows
 > marked *planned* are not yet implemented and say so; no row claims behavior that does not
 > exist. This table and the code move in the same commit.
@@ -43,7 +43,9 @@ visible in the repository.
 | Every model call goes through one seam | `src/novaops/llm/client.py` | done |
 | `audience` survives ingest and is filtered at the retrieval layer | [src/novaops/retrieval/documents.py](src/novaops/retrieval/documents.py) | done |
 | `manager_playbook` never reaches a non-manager | [src/novaops/retrieval/filters.py](src/novaops/retrieval/filters.py) · [store.py](src/novaops/retrieval/store.py) · [ADR-010](docs/DECISIONS.md) | done |
-| Tools are served over an MCP boundary, not called from the graph | `src/novaops/mcp_server/` | planned — Phase 1 |
+| Tools are served over an MCP boundary, not called from the graph | [src/novaops/mcp_server/server.py](src/novaops/mcp_server/server.py) | done |
+| Caller identity reaches tools through the transport, not the model | [src/novaops/mcp_server/context.py](src/novaops/mcp_server/context.py) · [ADR-013](docs/DECISIONS.md) | done |
+| No tool can approve anything — only application code can | [ADR-014](docs/DECISIONS.md) · [tests/test_mcp_server.py](tests/test_mcp_server.py) | done |
 | `classify → scope → gather evidence → answer`, one graph, two scopes | `src/novaops/agent/graph.py` | planned — Phase 2 |
 | Scoped tool visibility — not every tool on every call | `src/novaops/agent/scopes.py` | planned — Phase 2 |
 | A write is released only against a persisted approval, never `action_confirmed` | `src/novaops/agent/write_gate.py` · [ADR-006](docs/DECISIONS.md#adr-006--authorization-reads-a-persisted-approval-row-action_confirmed-only-controls-visibility) | planned — Phase 2 |
