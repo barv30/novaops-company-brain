@@ -55,6 +55,8 @@ class AgentState(TypedDict, total=False):
     pending_request_id: str   # the access request a write would act on, when there is one
     gate_reason: str          # why the gate opened or stayed shut — goes into the trace
     gate_released: list[str]  # write tools actually released this turn
+    handoff: dict             # Maya's typed AccessIntent, when she was asked to act
+    plan_override: str        # why code overruled the planner this turn; "" when it did not
 
     # --- terminal state ---------------------------------------------------
     status: str          # exactly one Status value per run

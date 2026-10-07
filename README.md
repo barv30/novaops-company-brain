@@ -72,7 +72,10 @@ visible in the repository.
 | Replaying a request creates no second row | [src/novaops/db/idempotency.py](src/novaops/db/idempotency.py) · [tests/test_db.py](tests/test_db.py) | done |
 | Approvals are recordable — the tool no lesson provides | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-012](docs/DECISIONS.md) | done |
 | `W-I-02`'s missing capability is reported, not invented | [src/novaops/workflows/access.py](src/novaops/workflows/access.py) `team_system_access` · the manager is the caller, never an argument | done — states the gap, then what each person's records show |
-| The model is told who is asking, from the application | [src/novaops/agent/policy.py](src/novaops/agent/policy.py) `render_caller` | done |
+| The model is told who is asking, from the application — and told apart from who the request is about | [src/novaops/agent/policy.py](src/novaops/agent/policy.py) `render_caller` · [tests/test_planner_overrides.py](tests/test_planner_overrides.py) | done (ADR-024) |
+| A rule question is never answered without the rule — code overrules the planner | [src/novaops/agent/policy.py](src/novaops/agent/policy.py) `override_requires_tools` · trace metadata `plan_override` | done (ADR-024) |
+| Maya prepares a typed `AccessIntent` for Webex and never files it | [src/novaops/workflows/handoff.py](src/novaops/workflows/handoff.py) · [tests/test_handoff.py](tests/test_handoff.py) · trace metadata `handoff` | done (ADR-023) |
+| A person named in a tool argument is resolved to one id, or refused as ambiguous | [src/novaops/mcp_server/server.py](src/novaops/mcp_server/server.py) `_resolve_employee` | done |
 | A pending approval survives the process being killed | [evals/test_restart_survival.py](evals/test_restart_survival.py) | done — real subprocesses |
 | A human decision is recorded by application code, never a tool | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) `approve` · [ADR-014](docs/DECISIONS.md) | done |
 | The gate opens only once *every* approval is granted | [evals/test_approval_loop.py](evals/test_approval_loop.py) | done — AR001 needs AP001 and AP002 |

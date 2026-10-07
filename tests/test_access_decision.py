@@ -207,3 +207,33 @@ def test_the_entitlement_column_is_relabelled_on_the_way_out():
     view = _employee_view({"employee_id": "E010", "systems_allowed_by_role": '["Webex"]'})
     assert "systems_allowed_by_role" not in view
     assert view["systems_entitled_by_role_NOT_access"] == '["Webex"]'
+
+
+# 5. TOOLS ACCEPT A NAME WHERE THEY ASK FOR AN ID ----------------------------
+
+def test_a_unique_name_resolves_to_the_id(db):
+    """S2 turn 4: the model passed "Rachel Stein" and got an empty list, which it
+    reported as "I don't see any tickets for Rachel Stein" — while T001 is hers."""
+
+    from novaops.mcp_server.server import _resolve_employee
+
+    assert _resolve_employee(db, "Rachel Stein") == "E010"
+    assert _resolve_employee(db, "e010") == "E010"
+
+
+def test_an_ambiguous_name_is_refused_with_the_candidates(db):
+    """Two employees are called Maya. Picking one reports the wrong person's records."""
+
+    from novaops.mcp_server.server import _resolve_employee
+
+    with pytest.raises(ValueError, match="E001.*E020|E020.*E001"):
+        _resolve_employee(db, "Maya")
+
+
+def test_an_unknown_name_is_an_error_not_an_empty_result(db):
+    """An empty list reads as "no records"; an error reads as "wrong input"."""
+
+    from novaops.mcp_server.server import _resolve_employee
+
+    with pytest.raises(ValueError, match="No employee matches"):
+        _resolve_employee(db, "Toucan Sam")

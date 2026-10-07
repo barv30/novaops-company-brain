@@ -30,6 +30,7 @@ restricted chunk is never a candidate — it is not retrieved and then withheld.
 
 from __future__ import annotations
 
+import re
 from contextlib import closing
 from functools import lru_cache
 from typing import Any
@@ -160,6 +161,34 @@ def _employee_view(row: dict) -> dict:
     if "systems_allowed_by_role" in view:
         view["systems_entitled_by_role_NOT_access"] = view.pop("systems_allowed_by_role")
     return view
+
+
+_EMPLOYEE_ID = re.compile(r"^E\d{3}$", re.IGNORECASE)
+
+
+def _resolve_employee(connection, value: str) -> str:
+    """An employee id from whatever the model passed — id or name.
+
+    Every tool that takes `employee_id` used to treat a name as an unknown id and return
+    an empty list, which reads exactly like "this person has no records". Measured on
+    `S2` turn 4: the model passed Rachel Stein by name, got nothing back, and told Sara
+    "I don't see any tickets for Rachel Stein" — while T001 is hers and open.
+
+    A name that matches exactly one person resolves to them. A name matching several is
+    refused with the candidates, rather than guessed: two employees are called Maya, and
+    silently picking one reports the wrong person's records.
+    """
+
+    value = (value or "").strip()
+    if _EMPLOYEE_ID.match(value):
+        return value.upper()
+    matches = repositories.find_employees(connection, value)
+    if len(matches) == 1:
+        return matches[0]["employee_id"]
+    if not matches:
+        raise ValueError(f"No employee matches {value!r}. Pass an employee id such as 'E010'.")
+    names = ", ".join(f"{m['employee_id']} {m['full_name']}" for m in matches)
+    raise ValueError(f"{value!r} matches several employees ({names}). Pass the id.")
 
 
 def _caller(ctx: Context | None) -> Caller:
@@ -377,7 +406,9 @@ def diagnose_access(employee_id: str, system: str, ctx: Context | None = None) -
     """
     with _db() as connection:
         resolve_caller(ctx, connection)
-        decision = diagnose_access_from_records(connection, employee_id, system)
+        decision = diagnose_access_from_records(
+            connection, _resolve_employee(connection, employee_id), system
+        )
     return decision.model_dump(mode="json")
 
 
@@ -423,7 +454,9 @@ def list_employee_tickets(
     """
     with _db() as connection:
         resolve_caller(ctx, connection)
-        return repositories.list_employee_tickets(connection, employee_id, status or None)
+        return repositories.list_employee_tickets(
+            connection, _resolve_employee(connection, employee_id), status or None
+        )
 
 
 @mcp.tool()
@@ -438,7 +471,9 @@ def list_access_requests(employee_id: str, ctx: Context | None = None) -> list[d
     """
     with _db() as connection:
         resolve_caller(ctx, connection)
-        return repositories.list_access_requests(connection, employee_id)
+        return repositories.list_access_requests(
+            connection, _resolve_employee(connection, employee_id)
+        )
 
 
 @mcp.tool()
@@ -475,7 +510,9 @@ def list_onboarding_tasks(employee_id: str, ctx: Context | None = None) -> list[
     """
     with _db() as connection:
         resolve_caller(ctx, connection)
-        return repositories.list_onboarding_tasks(connection, employee_id)
+        return repositories.list_onboarding_tasks(
+            connection, _resolve_employee(connection, employee_id)
+        )
 
 
 @mcp.tool()
@@ -502,7 +539,7 @@ def get_onboarding_checklist(employee_id: str, ctx: Context | None = None) -> di
     """
     with _db() as connection:
         resolve_caller(ctx, connection)
-        checklist = build_checklist(connection, employee_id)
+        checklist = build_checklist(connection, _resolve_employee(connection, employee_id))
     return checklist.model_dump(mode="json")
 
 

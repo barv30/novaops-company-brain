@@ -47,10 +47,12 @@ from novaops.agent.policy import (
     memory_is_safe,
     narrates_untaken_action,
     needs_distillation,
+    override_requires_tools,
     planner_messages,
     read_tools,
     render_caller,
     render_gate,
+    render_handoff,
     render_memory_for_answer,
     render_plan,
 )
@@ -62,6 +64,7 @@ from novaops.agent.write_gate import (
     release_writes,
 )
 from novaops.llm.client import get_model
+from novaops.workflows.handoff import prepare_handoff
 
 
 def _tools_this_turn(state: AgentState) -> list[str]:
@@ -148,7 +151,10 @@ def build_graph(
     async def classify(state: AgentState) -> dict:
         result = await planner.ainvoke(planner_messages(state))
         plan = result["parsed"] or TurnPlan(current_intent="other", requires_tools=True)
-        return {"plan": plan.model_dump()}
+        override = override_requires_tools(plan, state["messages"])
+        if override:
+            plan = plan.model_copy(update={"requires_tools": True})
+        return {"plan": plan.model_dump(), "plan_override": override}
 
     # 3. SCOPE — deterministic; the only node that spends no model call ------
     def scope(state: AgentState) -> dict:
@@ -198,6 +204,31 @@ def build_graph(
                 connection=connection,
                 catalogue=catalogue,
             )
+
+            # Maya asked to act: record the typed handoff instead of filing anything.
+            # Built here, by application code, because the golden data marks S2 turn 10
+            # as needing no tool call — the handoff records what was asked, it does not
+            # look anything up. The model's plan supplies who and what (proposing); the
+            # conversation id and the requester are the application's. ADR-023.
+            handoff = None
+            if (
+                not active.writes_allowed
+                and plan.action_confirmed
+                and plan.subject_employee
+                and plan.requested_system
+            ):
+                try:
+                    built = prepare_handoff(
+                        connection,
+                        subject=plan.subject_employee,
+                        system=plan.requested_system,
+                        justification=plan.action_justification,
+                        conversation_id=state.get("thread_id") or "unknown",
+                        requested_by=state.get("caller_id") or "anonymous",
+                    )
+                    handoff = built.model_dump(mode="json") if built else None
+                except Exception:  # noqa: BLE001 — a handoff must never fail the turn
+                    handoff = None
         finally:
             connection.close()
 
@@ -205,6 +236,7 @@ def build_graph(
             "loadout": sorted(set(loadout) | set(decision.released)),
             "rearmed": False,
             "pending_request_id": request_id,
+            "handoff": handoff,
             "gate_reason": decision.reason,
             "gate_released": decision.released,
             "force_tool": False,
@@ -232,6 +264,7 @@ def build_graph(
             + render_memory_for_answer(state)
             + render_plan(plan)
             + render_gate(state)
+            + render_handoff(state)
         )
         if exhausted:
             # Offer nothing and say why. Leaving tools bound and asking nicely does not

@@ -660,6 +660,78 @@ passes in all of them. Turns 9 and 11 are the least stable.
 
 ---
 
+## ADR-023 · Maya's handoff is built by application code, not called as a tool
+
+**Date:** 2026-10-07 · **Status:** accepted
+
+**Context.** §6.5 requires a typed Maya → Webex handoff — "the subject employee, the
+system requested, a justification, and the id of the conversation it came from, so the
+write can be traced back and replayed without duplicating" — and Milestone 3 says to emit
+it "when the caller explicitly asks to act". `AccessIntent` had existed as a contract
+since Phase 0 and nothing constructed it. `S2` turn 10 passed its checks on wording alone.
+
+The obvious design is a tool Maya calls. The golden data rules it out: `S2` turn 10 ("Go
+ahead and file the Webex access request for her now") is annotated
+`should_use_tools: False`.
+
+**Decision.** The plan gains two proposal fields, `requested_system` and
+`action_justification`. When the scope is read-only, the plan says the caller authorised
+an action, and a subject and system are named, the scope node calls
+`workflows/handoff.py::prepare_handoff`. The model supplies who and what — proposing,
+which the spec allows. The application supplies the conversation id and the requester.
+The handoff is resolved against the same `diagnose_access` Webex uses, so it carries
+"what Webex would make of it" — the spec's "returns its pending result" — and it goes into
+state, the trace metadata, and the answer prompt.
+
+**Reasoning.** This is the second invariant applied to Maya: the model may propose an
+action; only application code records it. The handoff writes no row, so it needs no
+approval; filing stays the Webex scope's business behind the write gate. A subject that
+resolves to more than one person — "Maya" — builds nothing rather than a guess.
+
+**Consequences.** `action_confirmed` gains a consumer again, but only for Maya's
+non-writing handoff; it still opens nothing (ADR-020). The handoff depends on the planner
+naming the subject and system, so a plan that omits them yields no handoff. That is
+recorded as `handoff: (none)` in the trace rather than failing the turn.
+
+---
+
+## ADR-024 — Code overrules the planner on rule questions; caller and subject kept apart
+
+**Context.** A rehearsal of the evaluation set found two failures with one root: the
+model was told something true and drew the wrong conclusion from it.
+
+1. `S2` turn 9 — "Given the freeze I mentioned at the start, does adding a seat need
+   Finance?" The planner prompt names this exact sentence as needing a lookup. Nova set
+   `requires_tools=False` three runs out of three; the answer had no threshold.
+2. `S2` turn 4 — Sara: "Rachel Stein pinged me about her Webex login ticket." The caller
+   block added for `W-I-01` said "'I', 'me' and 'my' refer to E004". The model looked the
+   ticket up under E004 and reported that Rachel had none.
+
+**Decision.**
+1. `policy.py::override_requires_tools` runs inside `classify`. A `policy_question` may
+   skip the lookup only when the most recent turn that looked anything up fetched a rule
+   document (policy, memo, KB article, handbook). Otherwise it is forced on, and the
+   reason goes to state and to the trace as `plan_override`.
+2. `render_caller` states the named subject separately from the caller — "this request is
+   about Rachel Stein, not about the caller; never use E004 for her records". The
+   planner's copy is built with an empty plan, because the plan in state is last turn's
+   until `classify` replaces it.
+
+**Reasoning.** A prompt instruction the model ignores is not a control. Deciding *whether*
+a rule has been read is a fact about the message history, so code can answer it exactly.
+The rule is narrow on purpose: it encodes the planner prompt's own "follow-up on the
+passage just retrieved" case and nothing wider. A first version — "any rule document
+anywhere in the thread" — was too weak: when turn 6 had fetched the equipment policy, it
+stood down and turn 9 answered a spending question from the wrong document.
+
+**Consequences.** Checked against every golden turn annotated `should_use_tools: False`:
+S1 turns 2–4 and S5 turn 4 follow a rule fetch and keep their plan. Measured after the
+change: S2 39/43 (turn 9 now cites the USD 7,500 memo threshold), S8 13/13. Remaining S2
+misses (turns 5, 6, 11) are status questions the planner answers from the checklist it
+read earlier — the variance ADR-022 records, not covered by this rule.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.

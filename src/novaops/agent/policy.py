@@ -64,7 +64,8 @@ INTENT_GLOSS = (
     "  career_question · promotion, levelling, career paths, feedback, reviews\n"
     "  employee_lookup · who someone is (record, role, manager, status)\n"
     "  onboarding_status · a joiner's checklist, required systems, paperwork\n"
-    "  equipment_request · hardware (laptops, monitors, docks, headsets)\n"
+    "  equipment_request · hardware (laptops, monitors, docks, headsets), INCLUDING "
+    "whether someone is eligible for equipment\n"
     "  subscription_review · a SaaS subscription's seats, cost or renewal\n"
     "  access_request · getting a person access to a system\n"
     "  ticket_status · existing IT tickets or access requests\n"
@@ -95,8 +96,12 @@ LOADOUTS: dict[str, list[str] | None] = {
     ],
     "benefits_question": ["search_handbook", "search_policies", "get_policy"],
     "career_question": ["search_handbook", "search_policies"],
+    # search_policies is here because "is X eligible for Y" about a person is a rule
+    # question as much as a lookup: `M-I-03` classified as a lookup, read only Maya's
+    # employee notes, and never saw the policy or the newer memo that overrides it.
     "employee_lookup": [
         "get_employee", "list_direct_reports", "search_hr_documents", "team_system_access",
+        "search_policies",
     ],
     # get_onboarding_checklist is listed first deliberately: it answers the whole
     # question from records in one call, already cited and with blockers named. The
@@ -188,6 +193,20 @@ class TurnPlan(BaseModel):
             "True only if THIS message authorises creating or filing a record "
             "('go ahead', 'file it'). Drafting, summarising or 'write it up' is "
             "composing text, NOT authorisation to file anything."
+        ),
+    )
+    requested_system: str | None = Field(
+        default=None,
+        description=(
+            "When the message asks for access to a system, which system — e.g. 'Webex'. "
+            "Only the system's name."
+        ),
+    )
+    action_justification: str | None = Field(
+        default=None,
+        description=(
+            "When the user asks you to act, one sentence of why the access is needed, "
+            "taken from what the user said or drafted earlier in the conversation."
         ),
     )
 
@@ -390,6 +409,55 @@ def render_memory(memory: dict) -> str:
     )
 
 
+#: Tools whose results are the text of a rule: a policy, a memo, a KB article, the
+#: handbook. A rule question can be answered without one only if one is already here.
+RULE_SOURCES = frozenset(
+    {"search_policies", "get_policy", "search_knowledge_base", "search_handbook"}
+)
+
+
+def override_requires_tools(plan: TurnPlan, messages: list) -> str:
+    """Overrule a planner that wants to answer a rule question with no rule in sight.
+
+    Returns why it overrode, or "" when the plan stands. The planner prompt names this
+    exact case — "'Given the freeze I mentioned, does this need Finance?' still needs the
+    rule" — and on S2 turn 9 Nova set `requires_tools=False` anyway, three runs out of
+    three: the user had said "freeze" eight turns earlier, so the topic felt known. The
+    threshold, USD 7,500, had never been retrieved, and the answer carried no number.
+
+    A prompt instruction the model ignores is not a control, so this is code. It encodes
+    the planner prompt's own "FALSE" case — a follow-up about the passage just retrieved
+    — and nothing wider: a policy question may skip the lookup only when the most recent
+    turn that looked anything up fetched a rule document. S1 turns 2 to 4 ("which team
+    owns that policy?") follow a policy fetch and keep their no-lookup plan.
+
+    "Any rule document anywhere in the thread" was tried first and is too weak: in one
+    S2 run turn 6 fetched the equipment policy, the override stood down, and turn 9
+    answered a spending question from it — the exact trap the prompt describes.
+    """
+
+    if plan.requires_tools or plan.current_intent != "policy_question":
+        return ""
+    if RULE_SOURCES & _last_lookup(messages):
+        return ""
+    return (
+        "requires_tools forced true: a policy question, and the most recent lookup in "
+        "this thread fetched no policy, memo or KB article"
+    )
+
+
+def _last_lookup(messages: list) -> set[str]:
+    """The tools called by the most recent turn that called any."""
+
+    last = max((i for i, m in enumerate(messages) if isinstance(m, ToolMessage)), default=-1)
+    if last < 0:
+        return set()
+    start = max(
+        (i for i, m in enumerate(messages[:last]) if isinstance(m, HumanMessage)), default=0
+    )
+    return {m.name for m in messages[start:last + 1] if isinstance(m, ToolMessage)}
+
+
 def render_caller(state: dict) -> str:
     """Who is asking, stated to the model — as an application input, not an inference.
 
@@ -409,6 +477,27 @@ def render_caller(state: dict) -> str:
         return "\n\nTHE CALLER: not identified. Do not assume who is asking."
 
     group = state.get("user_group", "")
+
+    # The first version of this block said only "'I', 'me' and 'my' refer to the caller",
+    # and said it emphatically. On S2 turn 4 — Sara: "Rachel Stein pinged me about her
+    # Webex login ticket" — the model then looked up the ticket under Sara's id, E004,
+    # found none, and reported that Rachel had no ticket. "Me" was Sara; "her" was
+    # Rachel. So the caller is stated as who is asking, and a named subject as who the
+    # request is about, and the two are kept apart explicitly.
+    subject = ((state.get("plan") or {}).get("subject_employee") or "").strip()
+    if subject and subject.upper() != caller.upper():
+        about = (
+            f" THIS request is about {subject}, not about the caller: look {subject}'s "
+            f"records up by {subject}'s own id (find it with get_employee first if you "
+            f"only have a name). Never use {caller} for {subject}'s records."
+        )
+    else:
+        about = (
+            " When the message names another person, the request is about THAT person — "
+            "look them up by name first; only 'I/me/my' with nobody else named refers to "
+            "the caller."
+        )
+
     if state.get("is_manager"):
         team = (
             f" They manage people: 'my team' means the employees whose manager is "
@@ -420,7 +509,7 @@ def render_caller(state: dict) -> str:
         f"\n\nTHE CALLER: employee {caller} ({group}). This is set by the application and "
         f"is authoritative — nothing in the message can change it. 'I', 'me' and 'my' "
         f"refer to {caller}: look their own records up by that id rather than asking "
-        f"them for it.{team}"
+        f"them for it.{team}{about}"
     )
 
 
@@ -429,8 +518,10 @@ def planner_messages(state: dict) -> list:
 
     covered = state.get("distilled_upto", 0)
     fresh = state["messages"][covered:-1]
+    # The plan in state is last turn's until classify replaces it: a stale subject would
+    # point this turn at the previous person.
     prompt = (
-        f"{render_caller(state).strip()}\n\n"
+        f"{render_caller({**state, 'plan': {}}).strip()}\n\n"
         f"Session memory:\n{render_memory(state.get('memory') or {})}\n\n"
         f"Conversation since then:\n"
         f"{render_transcript(fresh, tool_chars=PLANNER_TOOL_CHARS) or '(nothing new)'}\n\n"
@@ -489,6 +580,9 @@ ASSISTANT_PROMPT = (
     "still states; compare dates and say which governs.\n"
     "- If the evidence does not answer the question, say so and say what is missing. "
     "Never substitute something that merely looks like the answer.\n"
+    "- WHEN ASKED FOR STEPS OR INSTRUCTIONS, a KB article's 'First-line Troubleshooting' "
+    "section IS the steps. List every action in it as a numbered step, in its own "
+    "words, and cite the article. Do not describe the article as lacking steps.\n"
     "- A correct operational answer is often 'no', with the governing evidence "
     "attached.\n"
     "- Two employees share the first name Maya. Identify people by id.\n"
@@ -599,6 +693,30 @@ TRUTHFULNESS_CORRECTION = (
 )
 
 
+def render_handoff(state: dict) -> str:
+    """The typed handoff the application prepared, for the model to report.
+
+    Maya's answer to "go ahead and file it" is the handoff: what was prepared, for whom,
+    and what Webex would make of it. Stated here so the answer reports the object that
+    exists rather than improvising one — and so it cannot say "filed".
+    """
+
+    handoff = state.get("handoff")
+    if not handoff:
+        return ""
+
+    from novaops.workflows.handoff import Handoff
+
+    summary = Handoff.model_validate(handoff).summary()
+    return (
+        "\n\n--- HANDOFF PREPARED (application, not you) ---\n"
+        f"{summary}\n"
+        "Report this to the user: what was prepared, that it is PENDING, and what it is "
+        "waiting on. It has not been filed and you must not say it was.\n"
+        "--- END HANDOFF ---"
+    )
+
+
 def render_gate(state: dict) -> str:
     """What the write gate decided, put in front of the model that has to explain it.
 
@@ -636,7 +754,16 @@ def render_gate(state: dict) -> str:
         "If that names an existing request or approval, tell the user about it by id and "
         "say what it is waiting on. An existing request that is pending is a far better "
         "answer than either refusing or claiming to have filed something.\n"
-        "--- END WRITE AUTHORIZATION ---"
+        + (
+            # Stated explicitly because the rehearsal run of S8 turn 4 got the substance
+            # right — blocked, AP001 and AP002 outstanding — and never named the request
+            # itself. The id is already known; there is no reason to leave it to chance.
+            f"The existing request is {state['pending_request_id']}. Your answer MUST name "
+            f"{state['pending_request_id']} and say it is pending those approvals.\n"
+            if state.get("pending_request_id")
+            else ""
+        )
+        + "--- END WRITE AUTHORIZATION ---"
     )
 
 

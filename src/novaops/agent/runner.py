@@ -17,6 +17,7 @@ It owns the three things a turn needs that the graph itself should not know abou
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -68,6 +69,7 @@ class TurnResult:
     gate_released: list[str] = field(default_factory=list)
     trace_id: str | None = None
     request_id: str = ""
+    handoff: dict | None = None
     state: dict[str, Any] = field(default_factory=dict)
 
 
@@ -359,6 +361,9 @@ async def answer(
                     "loadout_size": len(result.get("loadout") or []),
                     "gate_released": ", ".join(released) or "(nothing)",
                     "gate_reason": result.get("gate_reason", ""),
+                    "handoff": json.dumps(result.get("handoff")) if result.get("handoff")
+                    else "(none)",
+                    "plan_override": result.get("plan_override") or "(none)",
                 },
             )
 
@@ -372,6 +377,7 @@ async def answer(
                 gate_reason=result.get("gate_reason", ""),
                 gate_released=released,
                 trace_id=span.trace_id,
+                handoff=result.get("handoff"),
                 request_id=request_id,
                 state=result,
             )
