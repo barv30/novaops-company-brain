@@ -122,7 +122,13 @@ def turn_span(
         metadata["case_id"] = case_id
 
     with propagate_attributes(session_id=thread_id, user_id=caller_id, metadata=metadata):
-        with client.start_as_current_observation(name=name, input=user_input) as span:
+        # `agent`, not the default span: the LLM judges (scripts/judges.py) fire on
+        # observations of type AGENT, and this is the one observation per turn whose
+        # input is the user's message and whose output is the answer. Any other target
+        # would judge each model call inside the turn rather than the turn.
+        with client.start_as_current_observation(
+            as_type="agent", name=name, input=user_input
+        ) as span:
             wrapper = _Span(span)
             try:
                 yield wrapper
@@ -144,7 +150,12 @@ class _Span:
         metadata = fields.pop("metadata", None)
         if metadata:
             merged = dict(self.pending.get("metadata") or {})
-            merged.update({k: str(v) for k, v in metadata.items()})
+            # Scalars become strings, as the marker reads them. A dict stays structured:
+            # the judges reach into `trajectory` with a jsonPath, and a stringified dict
+            # is one opaque value that no path can enter.
+            merged.update(
+                {k: v if isinstance(v, dict) else str(v) for k, v in metadata.items()}
+            )
             self.pending["metadata"] = merged
         self.pending.update(fields)
 

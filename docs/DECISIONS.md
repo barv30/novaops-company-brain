@@ -732,6 +732,42 @@ read earlier — the variance ADR-022 records, not covered by this rule.
 
 ---
 
+## ADR-025 — Two LLM judges, and only the two the specification names
+
+**Context.** The Lesson 11 stage says: deterministic checks first, then "register LLM
+judges for what code cannot check (citation quality, whether the answer claims access
+was granted)". Lesson 11 `04-llm-judge` registers three generic judges (faithfulness,
+completeness, correctness).
+
+**Decision.** Two judges, registered by `scripts/judges.py`:
+`citation_faithfulness` (share of factual claims that are both supported by the turn's
+evidence and attributed to a document path or record id) and `no_false_grant` (1.0 or
+0.0: does the answer say access was granted, or a record filed, created or approved, when
+application code released no write). Both fire on the turn span — now typed `AGENT`, one
+per turn — and read a `trajectory` digest (`agent/digest.py`) through `jsonPath`
+mappings: the turn's tool calls and results, the carried facts and constraints, and the
+write record (`write_tools_released`, `status`, `gate_reason`, whether a handoff was
+prepared).
+
+**Reasoning.** A judge costs a model call, can drift between runs, and cannot be argued
+with, so it gets only what needs reading comprehension. Completeness and correctness are
+already decided by code against `required_facts` and `forbidden_facts` (`evals/`); a
+judge for them would be a second, less reliable opinion on a question already answered.
+`no_false_grant` is given the write record from application code rather than asked to
+infer it from tool output — invariant 2 applied to evaluation: what happened is what code
+recorded. Its distinction between "prepared, pending approval" (true) and "filed" (false)
+is the same line the truthfulness guard draws.
+
+**Consequences.** The digest duplicates and truncates (1,500 chars per tool result)
+evidence the trace holds in full; it exists only because a Langfuse rule can read one
+observation. Langfuse needs its own Bedrock LLM Connection to run the judges, and rules
+do not backfill, so they are registered in the submission project before the final run.
+`tests/test_judges.py` asserts every rubric placeholder is mapped and every `jsonPath`
+lands on a digest field — a broken path would otherwise score against an empty variable
+with no error.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.

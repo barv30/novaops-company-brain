@@ -195,6 +195,7 @@ python -m scripts.ingest             # build the FAISS index, preserving audienc
 python -m novaops.mcp_server         # serve the tools at http://127.0.0.1:9877/mcp
 
 python -m scripts.submit --dry-run   # the 27 graded traces, planned; drop --dry-run to run
+python -m scripts.judges --dry-run   # the two LLM judges; --enable registers them in Langfuse
 pytest                               # unit + integration tests
 pytest evals/                        # our own graded checks
 ruff check src tests evals

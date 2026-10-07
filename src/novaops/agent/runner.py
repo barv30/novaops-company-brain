@@ -25,6 +25,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from novaops import config
+from novaops.agent.digest import trajectory_digest
 from novaops.agent.graph import build_graph, sqlite_checkpointer
 from novaops.agent.policy import message_text
 from novaops.agent.scopes import MAYA, get_scope
@@ -364,6 +365,10 @@ async def answer(
                     "handoff": json.dumps(result.get("handoff")) if result.get("handoff")
                     else "(none)",
                     "plan_override": result.get("plan_override") or "(none)",
+                    # For the LLM judges, which can read only this span. See digest.py.
+                    "trajectory": trajectory_digest(
+                        _this_turn(messages), result, status=status, released=released
+                    ),
                 },
             )
 
