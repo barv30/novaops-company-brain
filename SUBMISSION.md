@@ -122,6 +122,10 @@ than one discovered while marking.
   from an earlier turn instead of looking again (ADR-022 records this as variance, measured
   over repeated runs). S8 turn 1 listed the VPN steps in 3 of 3 runs beforehand and omitted
   them in this one. The set was run once, as asked, and not re-run for a better result.
+- **Every trace carries deterministic scores** too — `binding_checks` and `turn_clean`,
+  posted after the run by `scripts/score_submission.py` against expectations taken from
+  the golden data or the spec (ADR-026). All 27 at a glance:
+  [`docs/SUBMISSION-SCORES.md`](docs/SUBMISSION-SCORES.md) — 142/151 checks, 21/27 clean.
 - **LLM judges** (`scripts/judges.py`, ADR-025) score every turn in this project:
   `no_false_grant` 1.00 on all 27; `citation_faithfulness` 0.73 mean. Some low citation
   scores are fair, while others penalise true statements about the system itself (e.g.
