@@ -17,7 +17,7 @@ actually matches the article, or whether "it's prepared and pending approval" cl
 grant. ADR-025.
 
 These run on LANGFUSE'S servers, not here. This file only configures: a rubric
-(evaluator) and a firing rule per judge. Langfuse needs its own model to call — an
+(evaluator) per judge, and one firing rule for both. Langfuse needs its own model to call — an
 LLM Connection in the project's settings (Lesson 11 `01-langfuse-setup`, step 7) —
 because its servers cannot read this repository's `.env`.
 
@@ -26,7 +26,7 @@ Adapted from Lesson 11 `04-llm-judge/evaluator-judges.py`.
     python -m scripts.judges --dry-run    # print payloads; calls Langfuse only to find the model
     python -m scripts.judges              # register; rules start PAUSED
     python -m scripts.judges --enable     # register and judge every new turn
-    python -m scripts.judges --delete     # remove both
+    python -m scripts.judges --delete     # remove both judges and the rule
 """
 
 from __future__ import annotations
@@ -155,14 +155,27 @@ def _base_url() -> str:
     return url.rstrip("/")
 
 
-def _request(method: str, path: str, payload: dict | None = None, unstable: bool = True) -> dict:
+
+
+#: Lesson 11 registered judges under `/api/public/unstable/`. Langfuse has since moved
+#: them to `/api/public/v2/`, and the old path answers 404. The shape changed with it: an
+#: evaluator now carries its own default variable mapping, and one rule attaches several
+#: evaluators by id ("assignments") instead of naming one evaluator per rule.
+API = "/api/public"
+V2 = "/api/public/v2"
+
+#: One rule fires both judges, so the turns they judge cannot drift apart.
+RULE_NAME = "novaops-turn-judges"
+
+
+def _request(method: str, path: str, payload: dict | None = None) -> dict:
     """Call the Langfuse public API with HTTP Basic auth (public key : secret key)."""
 
     auth = base64.b64encode(
         f"{os.environ['LANGFUSE_PUBLIC_KEY']}:{os.environ['LANGFUSE_SECRET_KEY']}".encode()
     ).decode()
     request = urllib.request.Request(
-        f"{_base_url()}/api/public{'/unstable' if unstable else ''}{path}",
+        f"{_base_url()}{path}",
         data=None if payload is None else json.dumps(payload).encode(),
         method=method,
         headers={"Authorization": f"Basic {auth}", "Accept": "application/json",
@@ -173,7 +186,7 @@ def _request(method: str, path: str, payload: dict | None = None, unstable: bool
             body = response.read().decode()
             return json.loads(body) if body else {}
     except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")[:400]
+        detail = error.read().decode("utf-8", errors="replace")[:600]
         raise SystemExit(f"Langfuse {method} {path} failed ({error.code}): {detail}") from None
 
 
@@ -184,7 +197,7 @@ def model_config() -> dict | None:
     connection's provider NAME, not its adapter.
     """
 
-    connections = _request("GET", "/llm-connections?limit=10", unstable=False).get("data", [])
+    connections = _request("GET", f"{API}/llm-connections?limit=10").get("data", [])
     for connection in connections:
         models = connection.get("customModels") or []
         if models:
@@ -197,15 +210,19 @@ def evaluator_payload(name: str, model: dict | None) -> dict:
     payload = {
         "type": "llm_as_judge",
         "name": name,
+        "description": JUDGES[name]["prompt"].split("\n", 1)[0],
         "prompt": JUDGES[name]["prompt"],
+        "variableMapping": JUDGES[name]["mapping"],
         # NUMERIC for both, so they average across a session; no_false_grant is 0 or 1.
-        # `reasoning` is what makes a low score checkable rather than an accusation.
+        # The reasoning is what makes a low score checkable rather than an accusation.
         "outputDefinition": {
             "dataType": "NUMERIC",
-            "score": {"description": "1.0 = no false claim, 0.0 = at least one."
-                      if binary else "0.0 (worst) to 1.0 (best), per the rubric."},
-            "reasoning": {"description": "At most two sentences naming the specific claim "
-                                         "behind the score."},
+            "minValue": 0.0,
+            "maxValue": 1.0,
+            "scoreValueInstructions": "1.0 = no false claim, 0.0 = at least one."
+            if binary else "0.0 (worst) to 1.0 (best), per the rubric.",
+            "scoreReasoningInstructions": "At most two sentences naming the specific "
+                                          "claim behind the score.",
         },
     }
     if model:
@@ -213,42 +230,41 @@ def evaluator_payload(name: str, model: dict | None) -> dict:
     return payload
 
 
-def rule_payload(name: str, enabled: bool) -> dict:
+def rule_payload(evaluator_ids: list[str], enabled: bool) -> dict:
     return {
-        "name": name,
-        "evaluator": {"type": "llm_as_judge", "name": name, "scope": "project"},
-        # There is no "trace" target. The turn span is the one AGENT observation per
-        # turn, so filtering to AGENT judges each turn once — not each model call.
-        "target": "observation",
+        "name": RULE_NAME,
         "enabled": enabled,
         "sampling": SAMPLING,
+        # The turn span is the one AGENT observation per turn (tracing.turn_span), so
+        # filtering to AGENT judges each turn once — not each model call inside it.
         "filter": [
             {"type": "stringOptions", "column": "type", "operator": "any of",
              "value": ["AGENT"]}
         ],
-        "mapping": JUDGES[name]["mapping"],
+        # No per-rule mapping: each evaluator's own default mapping applies.
+        "evaluatorAssignments": [{"evaluatorId": i} for i in evaluator_ids],
     }
 
 
-def _find(path: str, name: str) -> dict | None:
-    for item in _request("GET", f"{path}?limit=100").get("data", []):
-        if item.get("name") == name:
-            return item
-    return None
+def _find(collection: str, name: str) -> list[dict]:
+    """Every item with this name. v2 names are labels, not keys, so there may be several."""
+
+    items = _request("GET", f"{V2}/{collection}?limit=100").get("data", [])
+    return [item for item in items if item.get("name") == name]
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Register the NovaOps LLM judges in Langfuse.")
     parser.add_argument("--dry-run", action="store_true", help="print payloads, register nothing")
-    parser.add_argument("--delete", action="store_true", help="remove the judges and rules")
+    parser.add_argument("--delete", action="store_true", help="remove the judges and the rule")
     parser.add_argument("--enable", action="store_true", help="start judging immediately")
     args = parser.parse_args(argv)
 
     if args.dry_run:
         model = model_config()
         print(json.dumps(
-            {name: {"evaluator": evaluator_payload(name, model),
-                    "evaluation_rule": rule_payload(name, args.enable)} for name in JUDGES},
+            {"evaluators": [evaluator_payload(name, model) for name in JUDGES],
+             "evaluation_rule": rule_payload(["<id of each evaluator>"], args.enable)},
             indent=2,
         ))
         if not model:
@@ -256,14 +272,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.delete:
-        for name in JUDGES:
-            for path in ("/evaluation-rules", "/evaluators"):
-                existing = _find(path, name)
-                if existing:
-                    _request("DELETE", f"{path}/{urllib.parse.quote(existing['id'], safe='')}")
-                    print(f"[deleted] {path[1:]:<17} {name}")
-                else:
-                    print(f"[absent ] {path[1:]:<17} {name}")
+        for collection, names in (("evaluation-rules", [RULE_NAME]), ("evaluators", JUDGES)):
+            for name in names:
+                found = _find(collection, name)
+                for item in found:
+                    item_id = urllib.parse.quote(item["id"], safe="")
+                    _request("DELETE", f"{V2}/{collection}/{item_id}")
+                print(f"[{'deleted' if found else 'absent '}] {collection:<17} {name}")
         return 0
 
     model = model_config()
@@ -275,18 +290,22 @@ def main(argv: list[str] | None = None) -> int:
         )
     print(f"[model  ] {model['provider']} / {model['model']}\n")
 
+    ids: list[str] = []
     for name in JUDGES:
-        if _find("/evaluators", name):
+        existing = _find("evaluators", name)
+        if existing:
+            ids.append(existing[0]["id"])
             print(f"[exists ] evaluator {name} — --delete first to change its rubric")
         else:
-            _request("POST", "/evaluators", evaluator_payload(name, model))
+            ids.append(_request("POST", f"{V2}/evaluators", evaluator_payload(name, model))["id"])
             print(f"[created] evaluator {name}")
-        if _find("/evaluation-rules", name):
-            print(f"[exists ] rule      {name}")
-        else:
-            _request("POST", "/evaluation-rules", rule_payload(name, args.enable))
-            state = "judging new turns" if args.enable else "PAUSED — rerun with --enable"
-            print(f"[created] rule      {name} ({state})")
+
+    if _find("evaluation-rules", RULE_NAME):
+        print(f"[exists ] rule      {RULE_NAME}")
+    else:
+        _request("POST", f"{V2}/evaluation-rules", rule_payload(ids, args.enable))
+        state = "judging new turns" if args.enable else "PAUSED — rerun with --enable"
+        print(f"[created] rule      {RULE_NAME} -> {', '.join(JUDGES)} ({state})")
 
     print("\nRules judge only observations created AFTER they exist; they do not backfill.")
     return 0

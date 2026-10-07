@@ -766,6 +766,13 @@ do not backfill, so they are registered in the submission project before the fin
 lands on a digest field — a broken path would otherwise score against an empty variable
 with no error.
 
+**Amendment — the API moved.** Registering in the submission project failed: Lesson 11's
+`/api/public/unstable/evaluators` now answers 404. Langfuse serves evaluators and rules at
+`/api/public/v2/`, with a different shape — the variable mapping lives on the evaluator,
+and one rule attaches several evaluators by id. `scripts/judges.py` follows the v2 shape,
+read from the installed SDK's request types, and registers one rule
+(`novaops-turn-judges`) firing both judges on every `AGENT` observation.
+
 ---
 
 ## Open decisions

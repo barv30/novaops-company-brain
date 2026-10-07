@@ -89,12 +89,20 @@ def test_the_digest_survives_the_span_wrapper_as_a_structure():
     assert span.pending["metadata"]["turn"] == "4"
 
 
-def test_rules_judge_one_turn_span_each():
+def test_one_rule_fires_both_judges_on_the_turn_span():
+    rule = judges.rule_payload(["ev-1", "ev-2"], enabled=False)
+    assert rule["filter"] == [{"type": "stringOptions", "column": "type",
+                               "operator": "any of", "value": ["AGENT"]}]
+    assert rule["evaluatorAssignments"] == [{"evaluatorId": "ev-1"}, {"evaluatorId": "ev-2"}]
+    assert rule["enabled"] is False
+
+
+def test_each_evaluator_carries_its_own_mapping_and_a_bounded_score():
     for name in judges.JUDGES:
-        rule = judges.rule_payload(name, enabled=False)
-        assert rule["target"] == "observation"
-        assert rule["filter"][0]["value"] == ["AGENT"]
-        assert rule["enabled"] is False
+        payload = judges.evaluator_payload(name, {"provider": "p", "model": "m"})
+        assert payload["variableMapping"] == judges.JUDGES[name]["mapping"]
+        assert (payload["outputDefinition"]["minValue"],
+                payload["outputDefinition"]["maxValue"]) == (0.0, 1.0)
 
 
 def test_only_the_two_judges_the_specification_names():
