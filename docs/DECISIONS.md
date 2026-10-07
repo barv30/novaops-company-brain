@@ -775,6 +775,40 @@ read from the installed SDK's request types, and registers one rule
 
 ---
 
+## ADR-026 — The submitted traces are scored after the fact; the set is not re-run
+
+**Context.** The specification says to run `EVALUATION-INPUTS.yaml` once and leave the
+traces, and to score runs "with deterministic checks first, then judges". The judges
+scored the 27 submission traces as they arrived. The deterministic checks were only ever
+posted by `scripts/replay.py` on development runs, so the submitted traces carried judge
+scores and nothing from code.
+
+**Decision.** `scripts/score_submission.py` reads each trace listed in `SUBMISSION.md`
+back from Langfuse — the answer from the turn span, the tools and the retrieved document
+paths from its `TOOL` observations — checks it, and posts `binding_checks` and
+`turn_clean` on the same trace, with a fixed score id so a re-score replaces rather than
+adds. It also writes `docs/SUBMISSION-SCORES.md`. The agent is not run again.
+
+Expectations (`evals/submission_expectations.py`) come only from the course material,
+and each one names its source. Six items are golden material matched by opening message
+(`M-S-01`=`S2`, `M-S-02`=`S9`, `W-S-01`=`S8`, `M-I-01..03`=`SIMPLE_001/002/007`); the
+golden turn objects are used unchanged. `W-I-01..03` have no golden case, so their checks
+encode the specification's stated outcome for each, quoting it.
+
+**Reasoning.** Re-running the evaluation set to improve its numbers is tuning to the
+test; scoring the run that exists is measuring it. Reading the trace rather than the
+runner's printout means the score is about what a marker can open. Taking the bar from the
+course material — never from our own answers — is what makes the number mean something.
+
+**Consequences.** Single-turn golden cases contribute only `expected_sources`;
+`requires_tool_call` is left out as a description of the reference implementation's
+route (the golden cases mark retrieval questions `false`). The `W-I-*` checks are our
+reading of the specification's prose and are labelled as such on every score comment.
+Fixes made after the run (ADR-027 onwards) are measured on golden development runs and do
+not change these traces.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.

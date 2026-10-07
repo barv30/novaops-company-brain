@@ -202,11 +202,15 @@ def score_trace(
     *,
     comment: str | None = None,
     data_type: str | None = None,
+    score_id: str | None = None,
 ) -> None:
     """Attach a score to a trace that has already closed.
 
     The evaluation harness scores a turn *after* the span has ended — the checks need
     the finished answer — so scoring by id is the path that actually gets used.
+
+    A fixed `score_id` makes the write an upsert: scoring the same trace again replaces
+    its score instead of adding a second one beside it. Idempotent, like every write.
     """
 
     if not is_configured():
@@ -216,6 +220,7 @@ def score_trace(
         client.create_score(
             name=name, value=value, trace_id=trace_id, comment=comment,
             data_type=data_type,  # type: ignore[arg-type]
+            score_id=score_id,
         )
         client.flush()
     except Exception:  # noqa: BLE001
