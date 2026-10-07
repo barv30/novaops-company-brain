@@ -194,6 +194,7 @@ python -m scripts.reseed             # rebuild the business database from seed.s
 python -m scripts.ingest             # build the FAISS index, preserving audience metadata
 python -m novaops.mcp_server         # serve the tools at http://127.0.0.1:9877/mcp
 
+python -m scripts.submit --dry-run   # the 27 graded traces, planned; drop --dry-run to run
 pytest                               # unit + integration tests
 pytest evals/                        # our own graded checks
 ruff check src tests evals

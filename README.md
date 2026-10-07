@@ -84,6 +84,7 @@ visible in the repository.
 | Each trace is named for the case and turn it is | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) | done — `S1-quick-policy · t2 · maya` |
 | Runs are scored with deterministic checks on the trace itself | [scripts/replay.py](scripts/replay.py) `_publish` · [tracing.py](src/novaops/observability/tracing.py) `score_trace` | done |
 | The test suite never writes into the submission project | [tests/conftest.py](tests/conftest.py) | done |
+| The measured set runs under the spec's rules: reseed per case, one thread per session, one trace per turn | [scripts/submit.py](scripts/submit.py) · [tests/test_submit_plan.py](tests/test_submit_plan.py) | done — plans exactly 27 traces |
 
 ### Evidence we wrote ourselves
 
