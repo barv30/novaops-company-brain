@@ -159,3 +159,51 @@ def test_the_decision_survives_a_round_trip(rachel):
     assert restored.outcome is rachel.outcome
     assert restored.blocking_reason == rachel.blocking_reason
     assert len(restored.actions_taken) == len(rachel.actions_taken)
+
+
+# 4. W-I-02 — "WHICH OF MY TEAM HAS A WEBEX SEAT?" ---------------------------
+
+def test_team_access_states_the_gap_first(db):
+    """No table assigns seats to people, so the honest answer starts there."""
+
+    from novaops.workflows.access import team_system_access
+
+    result = team_system_access(db, "E018", "Webex")
+    assert result["seat_assignments_recorded"] is False
+    assert "must not be reported as one" in result["why"]
+
+
+def test_team_access_reports_what_the_records_show(db):
+    """The spec's expected answer: Rachel's request blocked, Maya's provisioning task
+    blocked, Noam not entitled by role."""
+
+    from novaops.workflows.access import team_system_access
+
+    team = {m["employee_id"]: m for m in team_system_access(db, "E018", "Webex")["team"]}
+    assert set(team) == {"E001", "E003", "E010"}
+
+    rachel = " ".join(team["E010"]["what_the_records_show"])
+    maya = " ".join(team["E001"]["what_the_records_show"])
+    noam = " ".join(team["E003"]["what_the_records_show"])
+    assert "AR001" in rachel and "blocked" in rachel
+    assert "OT005" in maya and "blocked" in maya
+    assert "not entitled" in noam
+
+
+def test_nobody_is_reported_as_holding_a_seat(db):
+    """The trap: entitlement read as access reports Webex for two blocked people."""
+
+    from novaops.workflows.access import team_system_access
+
+    for member in team_system_access(db, "E018", "Webex")["team"]:
+        assert member["holds_a_seat"].startswith("not recorded"), member["name"]
+
+
+def test_the_entitlement_column_is_relabelled_on_the_way_out():
+    """The column the agent misread is renamed at the server boundary, not hidden."""
+
+    from novaops.mcp_server.server import _employee_view
+
+    view = _employee_view({"employee_id": "E010", "systems_allowed_by_role": '["Webex"]'})
+    assert "systems_allowed_by_role" not in view
+    assert view["systems_entitled_by_role_NOT_access"] == '["Webex"]'

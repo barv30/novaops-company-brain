@@ -44,6 +44,7 @@ from novaops.mcp_server.context import request_id_from, resolve_caller
 from novaops.retrieval.filters import visible_ids
 from novaops.retrieval.store import FaissStore, SearchHit
 from novaops.workflows.access import diagnose_access as diagnose_access_from_records
+from novaops.workflows.access import team_system_access as team_system_access_from_records
 from novaops.workflows.onboarding import build_checklist
 
 mcp = FastMCP("novaops-company-brain", host=config.MCP_HOST, port=config.MCP_PORT)
@@ -144,6 +145,21 @@ def _excluded_collections(
         if not caller.may_read(chunk.audience):
             withheld.add(chunk.corpus)
     return sorted(withheld)
+
+
+def _employee_view(row: dict) -> dict:
+    """An employee row as the model should see it.
+
+    `systems_allowed_by_role` is renamed, not removed. It is a real fact — what the role
+    permits — and it is exactly the column the agent read as "has a Webex seat" on the
+    first run of `W-I-02`, reporting access for two people whose access is blocked. A
+    name that says what it is costs nothing and removes the misreading at the source.
+    """
+
+    view = dict(row)
+    if "systems_allowed_by_role" in view:
+        view["systems_entitled_by_role_NOT_access"] = view.pop("systems_allowed_by_role")
+    return view
 
 
 def _caller(ctx: Context | None) -> Caller:
@@ -268,10 +284,10 @@ def get_employee(
         resolve_caller(ctx, connection)
         if employee_id:
             row = repositories.get_employee(connection, employee_id)
-            return [row] if row else []
+            return [_employee_view(row)] if row else []
         if name:
-            return repositories.find_employees(connection, name)
-        return repositories.all_employees(connection)
+            return [_employee_view(r) for r in repositories.find_employees(connection, name)]
+        return [_employee_view(r) for r in repositories.all_employees(connection)]
 
 
 @mcp.tool()
@@ -283,7 +299,7 @@ def list_direct_reports(manager_id: str, ctx: Context | None = None) -> list[dic
     """
     with _db() as connection:
         resolve_caller(ctx, connection)
-        return repositories.direct_reports(connection, manager_id)
+        return [_employee_view(r) for r in repositories.direct_reports(connection, manager_id)]
 
 
 # 3. SYSTEMS, SEATS, CONTRACTS -----------------------------------------------
@@ -363,6 +379,33 @@ def diagnose_access(employee_id: str, system: str, ctx: Context | None = None) -
         resolve_caller(ctx, connection)
         decision = diagnose_access_from_records(connection, employee_id, system)
     return decision.model_dump(mode="json")
+
+
+@mcp.tool()
+def team_system_access(system: str, ctx: Context | None = None) -> dict:
+    """What can be said about YOUR team and one system — call this for any question like
+    "which of my team has a Webex seat / licence / access".
+
+    The team is the caller's direct reports, taken from the caller's identity — there is
+    no argument for whose team, so it cannot be anyone else's.
+
+    Read the result carefully: `seat_assignments_recorded` is False because no record says
+    which person holds a seat. Report that first. Then report, per person, what the
+    records DO show — a blocked access request, a blocked onboarding task, or no
+    entitlement. `entitled_by_role` is NOT a seat and must never be reported as one.
+
+    Args:
+        system: The system name, e.g. 'Webex'.
+    """
+    with _db() as connection:
+        caller = resolve_caller(ctx, connection)
+        if not caller.is_manager:
+            return {
+                "system": system,
+                "team": [],
+                "note": f"{caller.employee_id} manages nobody, so there is no team to report.",
+            }
+        return team_system_access_from_records(connection, caller.employee_id, system)
 
 
 @mcp.tool()

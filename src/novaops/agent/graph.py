@@ -49,6 +49,7 @@ from novaops.agent.policy import (
     needs_distillation,
     planner_messages,
     read_tools,
+    render_caller,
     render_gate,
     render_memory_for_answer,
     render_plan,
@@ -227,6 +228,7 @@ def build_graph(
         # for the one that plans.
         prompt = (
             answer_prompt(active)
+            + render_caller(state)
             + render_memory_for_answer(state)
             + render_plan(plan)
             + render_gate(state)

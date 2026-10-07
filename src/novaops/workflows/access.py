@@ -230,3 +230,83 @@ def diagnose_access(
         recommended_next_steps=steps,
         blocking_reason=reason,
     )
+
+
+def team_system_access(
+    connection: sqlite3.Connection,
+    manager_id: str,
+    system_name: str,
+) -> dict:
+    """What can be said about a manager's team and one system — and what cannot.
+
+    `W-I-02`: Yael Romano asks "which of my team members has a Webex seat?". There is no
+    precise answer, and that is the test. `software_subscriptions` records seats as
+    counts; no table says who holds one. `systems_allowed_by_role` says who is
+    *entitled*, which looks exactly like the answer and is not — read that way it
+    reports Webex for Rachel Stein and Maya Cohen, the two people whose access is
+    actually blocked. Measured: the agent said precisely that on its first run.
+
+    So the gap is stated by the tool rather than left to the model's restraint, and each
+    team member gets what the records actually show: an access request and its state,
+    an onboarding task and its state, or no entitlement at all.
+    """
+
+    system = repositories.find_system(connection, system_name)
+    reports = repositories.direct_reports(connection, manager_id)
+    position = repositories.seat_position(connection, system_name) if system else None
+
+    members = []
+    for employee in reports:
+        entitled = _entitled(employee, system["system_name"]) if system else False
+        on_record: list[str] = []
+        evidence: list[str] = []
+
+        if system:
+            request = repositories.find_open_access_request(
+                connection, employee["employee_id"], system["system_id"]
+            )
+            if request:
+                on_record.append(
+                    f"access request {request['request_id']} is {request['status']}"
+                    + (f" ({request['decision_reason']})" if request.get("decision_reason") else "")
+                )
+                evidence.append(request["request_id"])
+            for task in repositories.list_onboarding_tasks(connection, employee["employee_id"]):
+                if task.get("related_system_id") == system["system_id"]:
+                    on_record.append(
+                        f"onboarding task {task['task_id']} is {task['status']}: "
+                        f"{task['description']}"
+                    )
+                    evidence.append(task["task_id"])
+
+        if not entitled:
+            on_record.insert(0, f"not entitled to {system_name} by role")
+
+        members.append(
+            {
+                "employee_id": employee["employee_id"],
+                "name": employee["full_name"],
+                "role": employee["role"],
+                "entitled_by_role": entitled,
+                "holds_a_seat": "not recorded — no table assigns seats to people",
+                "what_the_records_show": on_record or ["nothing on record for this system"],
+                "evidence": evidence or [employee["employee_id"]],
+            }
+        )
+
+    return {
+        "system": system_name,
+        "manager_id": manager_id,
+        "seat_assignments_recorded": False,
+        "why": (
+            "Seats are recorded as counts on the subscription only. No record says which "
+            "individual holds a seat, so 'who has a seat' cannot be answered from the data. "
+            "Entitlement by role is NOT a seat and must not be reported as one."
+        ),
+        "seat_counts": (
+            f"{position['active_seats']} active of {position['seat_limit']} "
+            f"({position['subscription_id']}, contract {position['contract_id']})"
+            if position else "unknown"
+        ),
+        "team": members,
+    }

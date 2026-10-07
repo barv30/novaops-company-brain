@@ -71,7 +71,8 @@ visible in the repository.
 | The terminal status comes from the workflow, not the prose | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) `_terminal_status` | done |
 | Replaying a request creates no second row | [src/novaops/db/idempotency.py](src/novaops/db/idempotency.py) · [tests/test_db.py](tests/test_db.py) | done |
 | Approvals are recordable — the tool no lesson provides | [src/novaops/db/writes.py](src/novaops/db/writes.py) · [ADR-012](docs/DECISIONS.md) | done |
-| `W-I-02`'s missing capability is reported, not invented | [src/novaops/db/repositories.py](src/novaops/db/repositories.py) | done |
+| `W-I-02`'s missing capability is reported, not invented | [src/novaops/workflows/access.py](src/novaops/workflows/access.py) `team_system_access` · the manager is the caller, never an argument | done — states the gap, then what each person's records show |
+| The model is told who is asking, from the application | [src/novaops/agent/policy.py](src/novaops/agent/policy.py) `render_caller` | done |
 | A pending approval survives the process being killed | [evals/test_restart_survival.py](evals/test_restart_survival.py) | done — real subprocesses |
 | A human decision is recorded by application code, never a tool | [src/novaops/agent/runner.py](src/novaops/agent/runner.py) `approve` · [ADR-014](docs/DECISIONS.md) | done |
 | The gate opens only once *every* approval is granted | [evals/test_approval_loop.py](evals/test_approval_loop.py) | done — AR001 needs AP001 and AP002 |
