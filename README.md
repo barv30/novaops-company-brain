@@ -98,6 +98,7 @@ the spec asks for them under `evals/`.
 | A closed branch stops driving the conversation | [evals/test_conversation_properties.py](evals/test_conversation_properties.py) | done |
 | A durable fact survives its branch closing | [evals/test_conversation_properties.py](evals/test_conversation_properties.py) | **unreliable** — xfail, see the reason in the file |
 | Replaying a request creates no second row | [evals/test_idempotency.py](evals/test_idempotency.py) | done — asserted on row counts |
+| Retrieval is scored against `retrieval_expectations` | [evals/test_retrieval_expectations.py](evals/test_retrieval_expectations.py) | done — baseline 12/17 @8, 15/17 @15, held as a regression floor |
 | A pending approval survives a restart | [evals/test_restart_survival.py](evals/test_restart_survival.py) | done — real subprocesses, not a mocked restart |
 
 ## Where this diverges from the course lessons
