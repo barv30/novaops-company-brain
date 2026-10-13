@@ -2,40 +2,40 @@
 
 The 27 traces in `SUBMISSION.md`, read back from Langfuse and checked by `scripts/score_submission.py` against `evals/submission_expectations.py`. Generated — do not edit by hand. The same scores are on each trace as `binding_checks` and `turn_clean`, beside the LLM judges' scores.
 
-- **Binding checks:** 142 / 151 passed
-- **Clean turns:** 21 / 27
-- **Judge `no_false_grant`:** 1.00 over 27
-- **Judge `citation_faithfulness`:** 0.73 over 27
+- **Binding checks:** 146 / 151 passed
+- **Clean turns:** 23 / 27
+- **Judge `no_false_grant`:** 0.93 over 27
+- **Judge `citation_faithfulness`:** 0.70 over 27
 
 | Item | Turn | Checks | Judges (cite / grant) | Failed checks |
 | ---- | ---- | ------ | --------------------- | ------------- |
 | `M-I-01` | — | 9/9 | 1.0 / 1.0 | — |
 | `M-I-02` | — | 9/9 | 1.0 / 1.0 | — |
-| `M-I-03` | — | 8/9 | 1.0 / 1.0 | `expected_sources`: maya_cohen_offer_letter.md \| equipment_policy.md \| remote_equipment_budget_update.md — retrieved instead: (nothing) |
-| `M-S-01` | 1 | 3/3 | 0.8 / 1.0 | — |
-| `M-S-01` | 2 | 4/4 | 0.7 / 1.0 | — |
-| `M-S-01` | 3 | 3/3 | 0.5 / 1.0 | — |
-| `M-S-01` | 4 | 3/3 | 1.0 / 1.0 | — |
-| `M-S-01` | 5 | 2/4 | 0.5 / 1.0 | `required_fact`: A005\|MacBook — not in the answer<br>`should_use_tools`: True — used: (none) |
-| `M-S-01` | 6 | 3/4 | 0.9 / 1.0 | `should_use_tools`: True — used: (none) |
+| `M-I-03` | — | 9/9 | 0.7 / 0.0 | — |
+| `M-S-01` | 1 | 3/3 | 0.9 / 1.0 | — |
+| `M-S-01` | 2 | 4/4 | 0.8 / 1.0 | — |
+| `M-S-01` | 3 | 3/3 | 0.0 / 1.0 | — |
+| `M-S-01` | 4 | 2/3 | 0.9 / 1.0 | `required_fact`: T001\|open — not in the answer |
+| `M-S-01` | 5 | 4/4 | 1.0 / 1.0 | — |
+| `M-S-01` | 6 | 4/4 | 0.5 / 1.0 | — |
 | `M-S-01` | 7 | 6/6 | 1.0 / 1.0 | — |
-| `M-S-01` | 8 | 3/3 | 0.9 / 1.0 | — |
+| `M-S-01` | 8 | 3/3 | 1.0 / 1.0 | — |
 | `M-S-01` | 9 | 3/3 | 0.8 / 1.0 | — |
-| `M-S-01` | 10 | 3/3 | 0.0 / 1.0 | — |
-| `M-S-01` | 11 | 2/3 | 0.8 / 1.0 | `should_use_tools`: True — used: (none) |
-| `M-S-01` | 12 | 4/4 | 0.9 / 1.0 | — |
-| `M-S-02` | 1 | 9/9 | 0.9 / 1.0 | — |
-| `M-S-02` | 2 | 8/8 | 1.0 / 1.0 | — |
-| `M-S-02` | 3 | 4/4 | 0.0 / 1.0 | — |
-| `M-S-02` | 4 | 7/7 | 0.7 / 1.0 | — |
-| `M-S-02` | 5 | 3/5 | 0.8 / 1.0 | `required_fact`: 2026-07-26\|July 26\|planned — not in the answer<br>`should_use_tools`: True — used: (none) |
+| `M-S-01` | 10 | 3/3 | 0.5 / 1.0 | — |
+| `M-S-01` | 11 | 3/3 | 0.8 / 1.0 | — |
+| `M-S-01` | 12 | 4/4 | 0.0 / 1.0 | — |
+| `M-S-02` | 1 | 9/9 | 0.7 / 1.0 | — |
+| `M-S-02` | 2 | 7/8 | 0.7 / 1.0 | `should_use_tools`: False — used: get_employee, get_onboarding_checklist |
+| `M-S-02` | 3 | 2/4 | 0.0 / 1.0 | `required_fact`: Webex — not in the answer<br>`required_fact`: blocked\|seat limit\|40 — not in the answer |
+| `M-S-02` | 4 | 7/7 | 0.0 / 1.0 | — |
+| `M-S-02` | 5 | 5/5 | 0.8 / 0.0 | — |
 | `W-I-01` | — | 11/11 | 1.0 / 1.0 | — |
 | `W-I-02` | — | 13/13 | 1.0 / 1.0 | — |
-| `W-I-03` | — | 11/11 | 0.9 / 1.0 | — |
-| `W-S-01` | 1 | 2/4 | 0.0 / 1.0 | `required_fact`: MFA — not in the answer<br>`required_fact`: device\|trust — not in the answer |
+| `W-I-03` | — | 10/11 | 0.8 / 1.0 | `required_fact`: T001 — not in the answer |
+| `W-S-01` | 1 | 4/4 | 1.0 / 1.0 | — |
 | `W-S-01` | 2 | 3/3 | 0.9 / 1.0 | — |
-| `W-S-01` | 3 | 4/4 | 0.0 / 1.0 | — |
-| `W-S-01` | 4 | 2/2 | 0.8 / 1.0 | — |
+| `W-S-01` | 3 | 4/4 | 0.5 / 1.0 | — |
+| `W-S-01` | 4 | 2/2 | 0.6 / 1.0 | — |
 
 Where each item's expectations come from:
 

@@ -878,6 +878,43 @@ rather than inventing.
 
 ---
 
+## ADR-029 — The evaluation set was run a second time, and the judges were checked by hand
+
+**Context.** The first submission run (commit `73fe160`, scored in ADR-026: 142/151 checks,
+21/27 clean) found defects that ADR-027 and ADR-028 then fixed, measured on golden
+development sessions. The specification says to run `EVALUATION-INPUTS.yaml` once.
+
+**Decision.** The set was run a second time, from commit `b2f36cf`, into a fresh
+Langfuse project, and that run is the one submitted: 146/151 checks, 23/27 clean. This is
+stated in `SUBMISSION.md`, not left for a marker to discover. The first run's project was
+deleted; its per-trace results are kept in this repository at commit `38e7572`
+(`docs/SUBMISSION-SCORES.md` and the trace index in `SUBMISSION.md`). No fix was made
+between the second run and its scoring.
+
+Its judge scores were then read against the traces by hand (`docs/JUDGE-VS-CODE.md`).
+Of eight judge/code disagreements, six were the judge's error — three from the digest's
+1,500-character cut hiding evidence, two from turns that rightly use no tools, one from
+the permission boundary — and two were real citation gaps the code checks do not look
+for. `no_false_grant` scored two zeros; neither answer claims a grant.
+
+**Changes, for future runs only.** `digest.TOOL_RESULT_CHARS` 1,500 → 6,000, and the
+`no_false_grant` rubric now states that a record's status in its own words is not an
+action and that citation is not its question. The registered judges were not replaced
+and the traces were not re-scored: rules do not backfill, and re-running to improve a
+judge's number would be tuning to the test. The scores on the traces are what the
+rubrics at `73fe160` produced.
+
+**Reasoning.** A second run is defensible only if it is disclosed, the fixes between runs
+are measured on development data rather than on the evaluation set, and the first run's
+results remain readable. All three hold — with one caveat stated plainly: *which* defects
+to fix was chosen by reading the first run's failures, so the second run is not a blind
+measurement. The fixes are general (a record-state question, a record's own status word,
+KB steps as data, subject order) rather than tuned to a message, and each was measured
+on golden sessions before the second run. Judges are a second reader, not the measure:
+where the two disagreed, the code check was right six times in eight.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.

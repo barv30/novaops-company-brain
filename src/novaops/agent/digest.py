@@ -21,8 +21,13 @@ from langchain_core.messages import AIMessage, ToolMessage
 from novaops.agent.policy import message_text
 
 #: A tool result is often a policy or a record set, and a faithfulness judge has to
-#: check claims against its substance. Lesson 10 and 11 truncate at the same 1500.
-TOOL_RESULT_CHARS = 1500
+#: check claims against its substance. Lessons 10 and 11 truncate at 1500, and so did
+#: this until the submission run showed the cost: three of the eight judge/code
+#: disagreements were the judge calling evidence missing that sat past the cut — on
+#: M-I-03, at characters 3,116 and 3,590 of an 11,878-character search result.
+#: docs/JUDGE-VS-CODE.md, ADR-029. 6000 keeps every such case seen; the price is prompt
+#: tokens on two judges per turn.
+TOOL_RESULT_CHARS = 6000
 
 
 def trajectory_digest(

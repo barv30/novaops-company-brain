@@ -11,7 +11,7 @@ and it is how every trace gets found.
 | ------------------- | ------------------------------------------------ |
 | **Repository URL**  | `https://github.com/barv30/novaops-company-brain` |
 | **Access**          | instructor added as collaborator |
-| **Commit reviewed** | `73fe160f6ac5f15dbfbc37cf9aca67b694c8c833` — the code that produced the traces below |
+| **Commit reviewed** | `b2f36cff4fd6726f2b363253fb01e64dc0c658d4` — the code that produced the traces below; later commits add only documentation and judge fixes (ADR-029) |
 
 ## 2. Langfuse
 
@@ -59,38 +59,38 @@ blank if you did not run it.
 
 | Item | Turn | Trace ID |
 | ---- | ---- | -------- |
-| `M-I-01` | — | 9d8b01c63ed98d4900dfa237b060fa33 |
-| `M-I-02` | — | 99e17af7daf628bf03f667bfe8c67a5a |
-| `M-I-03` | — | 9cf8a54f5b0132c523682a5d8142dda0 |
-| `M-S-01` | 1 | 7662ad480e0f14835d43f3da8faabf3e |
-| `M-S-01` | 2 | 80716fce883af61e684cac96d76eced0 |
-| `M-S-01` | 3 | 63312ef102138f1d641573b3c489d897 |
-| `M-S-01` | 4 | da22648ccf0c8647dc231d4da8c86985 |
-| `M-S-01` | 5 | 25759bc897a1a1935457f753f91cdec4 |
-| `M-S-01` | 6 | 4a451c9979bf7cffe111e161acbf8db2 |
-| `M-S-01` | 7 | 2c0c4b37b892661827d57a5637c149db |
-| `M-S-01` | 8 | ce9c7e1852d22582fb4943c4cf011eba |
-| `M-S-01` | 9 | 52ecc7118ca189ca33e17261ab42affe |
-| `M-S-01` | 10 | 3c06a0c22b669defd5bd7b48e13cc766 |
-| `M-S-01` | 11 | 7be5233caca0351bfca8a202d1949086 |
-| `M-S-01` | 12 | 0fc63700465fa865cc247539713a2d09 |
-| `M-S-02` | 1 | e6b3381e01e8f25ac0cda5f61fe730c9 |
-| `M-S-02` | 2 | c0bd52bb9f2a12913674df3ec459140a |
-| `M-S-02` | 3 | aba405f913a0da1e1569f999058b7ec5 |
-| `M-S-02` | 4 | 472dfcb13a1f4a8012d2fd3cf194fc01 |
-| `M-S-02` | 5 | 734b8725c0480d7dafc350740407e550 |
+| `M-I-01` | — | 6e6213e212d11628e0ce3ba3637da4a8 |
+| `M-I-02` | — | fd7cd8a87338ace6c9353982af1af223 |
+| `M-I-03` | — | fe8661ec4bcd855f5d0f558f3d337690 |
+| `M-S-01` | 1 | b7ed166fa32b49dad034a9bccf9b5cd0 |
+| `M-S-01` | 2 | 016241521e367678a17148e32803562f |
+| `M-S-01` | 3 | 4af6bccd389e05dd19b0296bbe8fc9c2 |
+| `M-S-01` | 4 | ef8a25216d8fb76fb5fb0625e7ca18c3 |
+| `M-S-01` | 5 | e859b6507bf23e68c3e87f56597191c0 |
+| `M-S-01` | 6 | cd00a984b3bacc8001efc4d3bed618a8 |
+| `M-S-01` | 7 | 6e2fb7079535819ce8ee36e231919d99 |
+| `M-S-01` | 8 | 9146550997632c676801ab77a7ceb6f3 |
+| `M-S-01` | 9 | 164d147e406a8f784a85cfbe9588e1bd |
+| `M-S-01` | 10 | c4f187de358ffca2bda2ff263e1f87e6 |
+| `M-S-01` | 11 | 961fc27cb9babcc22b12b20498416e60 |
+| `M-S-01` | 12 | 33a2fa3dc224df8e2daa8a541bd3003d |
+| `M-S-02` | 1 | da59f6c22d9f37ca7502880f55c0278b |
+| `M-S-02` | 2 | 9166645c7fabaa7ffdb6052ae61f78ea |
+| `M-S-02` | 3 | 149295ebb50dd044544045ea526f417b |
+| `M-S-02` | 4 | 959420fbd7fe1029f75e0be66a794d51 |
+| `M-S-02` | 5 | 85202da70a8ddffb7496d99d82e7eaef |
 
 ### Webex - IT operations
 
 | Item | Turn | Trace ID |
 | ---- | ---- | -------- |
-| `W-I-01` | — | e06a60f144d13e2e4fee6b70ac868045 |
-| `W-I-02` | — | c1ed8e0e28c08962d51d334d2df3f265 |
-| `W-I-03` | — | ee1865eb4db93441fe935eee655b29f9 |
-| `W-S-01` | 1 | d872056dffa4242b10abe5b0d98f652c |
-| `W-S-01` | 2 | 211c1d07c9b8f5b58b6c933203bfb641 |
-| `W-S-01` | 3 | 9aff4f7c221e05f0b07db49261054c73 |
-| `W-S-01` | 4 | 05660d641f60be080a4730ffc183dd7b |
+| `W-I-01` | — | 90a947e60d2c50ee27766760e8bc4323 |
+| `W-I-02` | — | 83f6d45bd499f0e3bba4fd75ffda3aad |
+| `W-I-03` | — | 4df4e47e4dec5271ccca7b566c092dcd |
+| `W-S-01` | 1 | 9596bf03b50f87487dc038e002e56ef4 |
+| `W-S-01` | 2 | 203b5512ce14514c9ae74d518308d719 |
+| `W-S-01` | 3 | ead579802dbf66ca2b68041a1bee619a |
+| `W-S-01` | 4 | 8205b498ebd9fa52e8ce1a317e62f8b5 |
 
 ### Vendor - CRM extraction  *(optional)*
 
@@ -117,19 +117,27 @@ would do differently. Honesty here costs nothing and helps — a stated limitati
 than one discovered while marking.
 
 **Notes.**
-- **Measured against `GOLDEN-DATASETS.json` before submitting**, binding fields only: S2 39/43,
-  S9 30/33, S8 11/13 on this run. Most misses are turns where Nova answered a status question
-  from an earlier turn instead of looking again (ADR-022 records this as variance, measured
-  over repeated runs). S8 turn 1 listed the VPN steps in 3 of 3 runs beforehand and omitted
-  them in this one. The set was run once, as asked, and not re-run for a better result.
-- **Every trace carries deterministic scores** too — `binding_checks` and `turn_clean`,
-  posted after the run by `scripts/score_submission.py` against expectations taken from
-  the golden data or the spec (ADR-026). All 27 at a glance:
-  [`docs/SUBMISSION-SCORES.md`](docs/SUBMISSION-SCORES.md) — 142/151 checks, 21/27 clean.
-- **LLM judges** (`scripts/judges.py`, ADR-025) score every turn in this project:
-  `no_false_grant` 1.00 on all 27; `citation_faithfulness` 0.73 mean. Some low citation
-  scores are fair, while others penalise true statements about the system itself (e.g.
-  "Maya's scope is read-only"), which no tool result states.
+- **This is the second run of `EVALUATION-INPUTS.yaml`, and I want to say so up front.**
+  The first run (commit `73fe160`) scored 142/151 binding checks, 21/27 clean traces. Scoring
+  it showed defects; I fixed them, measured each fix on the golden development sessions
+  (not on the evaluation set), and ran the set again from commit `b2f36cf` into a fresh
+  project — the traces below. The first run's project was deleted; its per-trace results
+  stay readable at commit `38e7572` (`docs/SUBMISSION-SCORES.md`). Which defects to fix was
+  chosen from the first run's failures, so this run is not a blind measurement.
+  ADR-026 to ADR-029.
+- **Every trace carries deterministic scores**: `binding_checks` and `turn_clean`, posted
+  by `scripts/score_submission.py` against expectations taken from the golden data or the
+  spec, each naming its source (ADR-026). All 27 at a glance in
+  [`docs/SUBMISSION-SCORES.md`](docs/SUBMISSION-SCORES.md): **146/151 checks, 23/27 clean.**
+- **Two LLM judges** (`scripts/judges.py`, ADR-025) score every turn:
+  `citation_faithfulness` 0.70 mean, `no_false_grant` 0.93. I read every case where a judge
+  and a code check disagree against the full trace
+  ([`docs/JUDGE-VS-CODE.md`](docs/JUDGE-VS-CODE.md)): six of eight were the judge's error —
+  three from my own digest cutting tool results at 1,500 characters — and two were real
+  citation gaps. **Both `no_false_grant` zeros are false positives: no answer claims access
+  was granted or a record filed.** The judge fixes are in the code for future runs; the
+  traces were not re-scored (ADR-029).
 - Each turn span carries `trajectory` metadata (tool calls, carried context, the write
-  record), the scope as `agent_scope` (`scope` is reserved by Langfuse), and `plan_override`
-  where application code overruled the planner (ADR-024).
+  record), the scope as `agent_scope` (`scope` is reserved by Langfuse), `plan_override`
+  where application code overruled the planner (ADR-024, ADR-027), and `handoff` where Maya
+  prepared a request for Webex (ADR-023).
