@@ -809,6 +809,75 @@ not change these traces.
 
 ---
 
+## ADR-027 — Fixing what the scored submission found: record state, record words, KB steps
+
+**Context.** Scoring the submitted run (ADR-026) left six failing traces. Four were status
+questions answered from a record read turns earlier (S2 t5, t11; S9 t5), one omitted the
+VPN steps (S8 t1), one retrieved no policy (M-I-03). Measured, not guessed: each fix
+below is backed by `scripts/variance.py`, three runs per session, on the development
+project.
+
+**Decision.** Four changes, each moving a decision from the model into code or data:
+
+1. **`asks_record_state`**, a new, *required* planner field: does this message ask what a
+   record says now? If yes, `override_requires_tools` forces a lookup. The planner is not
+   asked the broad "could you quote the answer?" — it answered that wrongly — but a narrow
+   classification; code draws the consequence. The first version had `default=False`;
+   Nova omitted it and "no" was recorded for "is there a laptop ready for her?", so the
+   override never fired. Required, it cannot be skipped.
+2. **`ChecklistItem.record_status`.** `build_checklist` grouped `planned` under `pending`
+   and the record's own word was gone before the model saw it — while the answer rules say
+   to quote statuses verbatim. The grouped status stays for logic; the record's word sits
+   beside it.
+3. **The reserved laptop names the task that prepares it.** A005 (the MacBook) and OT003
+   ("Prepare laptop…", planned, 2026-07-26) are one fact in two tables. Distinct names
+   alone were tried first (an existing test asserted it) and S9 t5 still said "no due date
+   specified" three runs in three. The item now carries OT003's id, status and date.
+4. **`search_knowledge_base` returns `steps`**, the article's First-line Troubleshooting
+   section as a list (`retrieval/kb.py`). An answer rule saying "this section is the
+   steps" held one run in three. Split by sentence only: a comma split mangled
+   `mfa_reset.md` ("by manager, HR, or IT video check" became three steps).
+
+**Measured** (golden sessions, 3 runs each, against the submitted run):
+
+| Session | Submitted | After |
+| --- | --- | --- |
+| S2 | 39/43 | 43, 42, 43 |
+| S8 | 11/13 | 13, 13, 13 |
+| S9 | 30/33 | 30, 29, 31 |
+
+**Consequences.** S9 t5 now passes 3/3; S9's total did not move, because its remaining
+failures are scattered (t1 once, t2 twice, t3 twice) rather than one defect — variance in
+ADR-022's sense, not addressed here. One regression, recorded rather than hidden: S3 t9,
+"summarise where Alex Kim stands", now looks the record up where the golden annotation
+says it should not; a summary of *current* blockers reads as a record-state question.
+S3 is not in the submission set. `thread_id`s are now drawn per call, not per process
+(`runner.new_thread_id`): `variance.py`'s second run reused its first run's thread and
+the freshness guard (ADR-018) refused it, which is how that was found.
+
+---
+
+## ADR-028 — The order of subjects is recorded by code, not recalled by the model
+
+**Context.** S3 turn 8: "who was the person in my very first question?", seven turns after
+that branch was closed. The distilled memory held the fact; the answer still named the
+current subject on some runs. The test for it was marked xfail as "known unreliable".
+
+**Decision.** `classify` appends `{turn, subject}` to `state["subjects"]` whenever the
+plan's `subject_employee` changes (`policy.record_subject`), and the answer prompt states
+the list once it has two entries (`render_subjects`).
+
+**Reasoning.** The order in which a conversation visited people is not something to infer
+— the application saw every turn. The model still names the subject each turn
+(proposing); code keeps the sequence (recording). Same split as invariant 2.
+
+**Consequences.** S3 turn 8 passed 3/3 in `variance.py` and in
+`evals/test_conversation_properties.py`, whose xfail mark is removed. The list depends on
+the planner naming a subject; a turn that names none adds nothing, so it under-records
+rather than inventing.
+
+---
+
 ## Open decisions
 
 Record these here as they are made, then promote them to numbered ADRs.

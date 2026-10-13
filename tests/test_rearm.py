@@ -75,7 +75,10 @@ class _FakeModel:
         if model is TurnPlan:
             # The planner insists a lookup is needed. That is what arms rearm.
             return _Structured(
-                TurnPlan(current_intent="policy_question", requires_tools=True)
+                TurnPlan(
+                    current_intent="policy_question", requires_tools=True,
+                    asks_record_state=False,
+                )
             )
         return _Structured(
             ConversationMemory(current_intent="policy", important_facts=["x"])
@@ -164,7 +167,10 @@ async def test_rearm_does_not_fire_when_the_planner_wants_no_tools(monkeypatch, 
         _FakeModel,
         "with_structured_output",
         lambda self, m, include_raw=False: _Structured(
-            TurnPlan(current_intent="onboarding_status", requires_tools=False)
+            TurnPlan(
+                current_intent="onboarding_status", requires_tools=False,
+                asks_record_state=False,
+            )
             if m is TurnPlan
             else ConversationMemory(current_intent="x", important_facts=["y"])
         ),
@@ -197,6 +203,7 @@ async def test_an_instruction_to_act_does_not_open_the_read_loadout(monkeypatch,
             TurnPlan(
                 current_intent="access_request",
                 requires_tools=False,
+                asks_record_state=False,
                 action_confirmed=True,   # the user said "go ahead"
             )
             if m is TurnPlan
@@ -228,7 +235,10 @@ class _NeverSatisfied(_FakeModel):
     def with_structured_output(self, model, include_raw=False):
         if model is TurnPlan:
             return _Structured(
-                TurnPlan(current_intent="policy_question", requires_tools=True)
+                TurnPlan(
+                    current_intent="policy_question", requires_tools=True,
+                    asks_record_state=False,
+                )
             )
         return _Structured(ConversationMemory(current_intent="x", important_facts=["y"]))
 

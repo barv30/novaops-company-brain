@@ -53,14 +53,15 @@ def test_a_case_id_yields_a_different_thread_id_each_run():
 
     first = new_thread_id("M-I-01")
     assert first.startswith("M-I-01:"), "the case id stays readable for the trace index"
+    assert new_thread_id("M-I-01") != first
 
-    # A new process means a new stamp. Simulate one.
-    original = runner._RUN_STAMP
-    try:
-        runner._RUN_STAMP = "differentstamp"
-        assert runner.new_thread_id("M-I-01") != first
-    finally:
-        runner._RUN_STAMP = original
+
+def test_the_same_case_replayed_in_one_process_gets_a_fresh_thread():
+    """scripts/variance.py replays a session N times in one process. With one stamp per
+    process, run 2 got run 1's thread and the freshness guard stopped it."""
+
+    threads = {new_thread_id("S2-onboarding-maya") for _ in range(3)}
+    assert len(threads) == 3
 
 
 def test_two_cases_in_one_run_get_different_threads():

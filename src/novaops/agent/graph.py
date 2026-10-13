@@ -50,11 +50,13 @@ from novaops.agent.policy import (
     override_requires_tools,
     planner_messages,
     read_tools,
+    record_subject,
     render_caller,
     render_gate,
     render_handoff,
     render_memory_for_answer,
     render_plan,
+    render_subjects,
 )
 from novaops.agent.scopes import get_scope
 from novaops.agent.state import AgentState
@@ -150,11 +152,17 @@ def build_graph(
     # 2. CLASSIFY — this is the router --------------------------------------
     async def classify(state: AgentState) -> dict:
         result = await planner.ainvoke(planner_messages(state))
-        plan = result["parsed"] or TurnPlan(current_intent="other", requires_tools=True)
+        plan = result["parsed"] or TurnPlan(
+            current_intent="other", requires_tools=True, asks_record_state=False
+        )
         override = override_requires_tools(plan, state["messages"])
         if override:
             plan = plan.model_copy(update={"requires_tools": True})
-        return {"plan": plan.model_dump(), "plan_override": override}
+        return {
+            "plan": plan.model_dump(),
+            "plan_override": override,
+            "subjects": record_subject(state.get("subjects") or [], plan, state["messages"]),
+        }
 
     # 3. SCOPE — deterministic; the only node that spends no model call ------
     def scope(state: AgentState) -> dict:
@@ -265,6 +273,7 @@ def build_graph(
             + render_plan(plan)
             + render_gate(state)
             + render_handoff(state)
+            + render_subjects(state)
         )
         if exhausted:
             # Offer nothing and say why. Leaving tools bound and asking nicely does not

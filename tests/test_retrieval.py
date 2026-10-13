@@ -218,3 +218,42 @@ def test_an_index_round_trips(tiny_store, tmp_path, monkeypatch):
 def test_loading_a_missing_index_says_what_to_do(tmp_path):
     with pytest.raises(FileNotFoundError, match="scripts.ingest"):
         FaissStore.load(tmp_path / "nothing")
+
+
+# --- KB steps (retrieval/kb.py) -------------------------------------------------------
+
+def _kb(name: str) -> str:
+    return (config.DOCUMENTS_DIR / "it_kb" / f"{name}.md").read_text(encoding="utf-8")
+
+
+def test_the_vpn_article_yields_its_steps_including_mfa_and_device_trust():
+    """S8 turn 1 needs 'MFA' and 'device trust'; they are in the first step."""
+
+    from novaops.retrieval.kb import troubleshooting_steps
+
+    steps = troubleshooting_steps(_kb("vpn_access"))
+    assert steps[0].startswith("Confirm target actually requires VPN")
+    assert "MFA and device trust" in steps[0]
+
+
+def test_steps_are_split_by_sentence_never_inside_one():
+    """Splitting on commas turned 'by manager, HR, or IT video check' into three steps."""
+
+    from novaops.retrieval.kb import troubleshooting_steps
+
+    steps = troubleshooting_steps(_kb("mfa_reset"))
+    assert steps[0] == "Verify identity by manager, HR, or IT video check."
+    assert len(steps) == 4
+
+
+def test_every_kb_article_yields_steps():
+    from novaops.retrieval.kb import troubleshooting_steps
+
+    for path in (config.DOCUMENTS_DIR / "it_kb").glob("*.md"):
+        assert troubleshooting_steps(path.read_text(encoding="utf-8")), path.name
+
+
+def test_text_without_the_section_yields_nothing():
+    from novaops.retrieval.kb import troubleshooting_steps
+
+    assert troubleshooting_steps("## Escalation\n\nEscalate to IT Manager.") == []

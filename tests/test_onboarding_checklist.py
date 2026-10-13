@@ -149,7 +149,10 @@ def test_inventory_items_are_distinguishable_from_the_task(maya):
     assert equipment
     for item in equipment:
         assert "reserved in inventory" in item.name or "assigned" in item.name, item.name
-        assert item.due_date is None, "inventory has no due date; the task carries it"
+    # This used to assert the inventory item carried NO due date — distinct names were
+    # meant to be enough. Measured afterwards, they were not: S9 turn 5 still answered
+    # "no due date specified" three runs in three. The reserved machine now carries its
+    # preparing task's date, tested in the two tests at the end of this file.
 
     task = next(i for i in maya.items if "prepare laptop" in i.name.lower())
     assert task.due_date == "2026-07-26"
@@ -190,3 +193,24 @@ def test_an_employee_with_no_tasks_says_so_rather_than_looking_complete(db):
     note = " ".join(checklist.unresolved).lower()
     assert "no onboarding tasks are recorded" in note
     assert "not the same as work being complete" in note
+
+
+def test_the_record_status_is_kept_word_for_word(maya):
+    """`status` groups planned with pending; the record's own word must survive beside it.
+    S9 turn 5 requires "planned" — the code had rewritten it before the model saw it."""
+
+    ot003 = next(i for i in maya.items if any(c.record == "OT003" for c in i.citations)
+                 and i.category != "equipment")
+    assert ot003.status is ItemStatus.PENDING
+    assert ot003.record_status == "planned"
+
+
+def test_the_reserved_laptop_carries_the_date_of_the_task_that_prepares_it(maya):
+    """A005 and OT003 are one fact in two tables. S9 t5 answered 'no due date specified'
+    three runs in three, reading the laptop item while the date sat on the task."""
+
+    laptop = next(i for i in maya.items if i.category == "equipment" and "Laptop" in i.name)
+    assert laptop.due_date == "2026-07-26"
+    assert laptop.record_status == "planned"
+    assert "OT003" in laptop.name
+    assert {c.record for c in laptop.citations} == {"A005", "OT003"}

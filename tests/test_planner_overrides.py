@@ -17,7 +17,7 @@ from novaops.agent.policy import TurnPlan, override_requires_tools, planner_mess
 
 
 def plan(intent: str, requires_tools: bool) -> TurnPlan:
-    return TurnPlan(current_intent=intent, requires_tools=requires_tools)
+    return TurnPlan(current_intent=intent, requires_tools=requires_tools, asks_record_state=False)
 
 
 def tool_result(name: str) -> ToolMessage:
@@ -64,6 +64,33 @@ def test_a_kb_article_counts_as_a_rule_already_here():
 
     history = [tool_result("search_knowledge_base")]
     assert override_requires_tools(plan("policy_question", False), history) == ""
+
+
+def test_a_question_about_a_record_now_is_always_looked_up():
+    """S2 t5, 'is there a laptop ready for her?', right after reading her checklist."""
+
+    history = [HumanMessage("checklist?"), tool_result("get_onboarding_checklist"),
+               AIMessage("..."), HumanMessage("is there a laptop ready for her?")]
+    asked = TurnPlan(current_intent="onboarding_status", requires_tools=False,
+                     asks_record_state=True)
+    assert "a record read in an earlier turn is a snapshot" in override_requires_tools(
+        asked, history
+    )
+
+
+def test_a_summary_request_is_not_a_record_question():
+    """S2 t12, 'write me the full status summary', must stay lookup-free."""
+
+    summary = TurnPlan(current_intent="onboarding_status", requires_tools=False,
+                       asks_record_state=False)
+    assert override_requires_tools(summary, [tool_result("get_onboarding_checklist")]) == ""
+
+
+def test_the_planner_must_decide_whether_a_record_is_asked_about():
+    """With a default, Nova omitted the field and 'no' was recorded for 'is there a laptop
+    ready for her?'. Required in the schema, it cannot be skipped."""
+
+    assert "asks_record_state" in TurnPlan.model_json_schema()["required"]
 
 
 def test_other_intents_are_left_to_the_planner():
@@ -115,3 +142,40 @@ def test_the_planner_never_sees_last_turns_subject():
 
 def test_an_anonymous_caller_is_not_given_an_identity():
     assert "not identified" in render_caller(state(caller_id="anonymous"))
+
+
+# --- record_subject / render_subjects (ADR-028) -------------------------------------
+
+def _plan_about(subject: str | None) -> TurnPlan:
+    return TurnPlan(current_intent="other", requires_tools=False, asks_record_state=False,
+                    subject_employee=subject)
+
+
+def test_subjects_are_recorded_in_order_once_per_change():
+    """S3: Rachel on turns 1-3, Alex Kim from turn 4. Two entries, not seven."""
+
+    from novaops.agent.policy import record_subject
+
+    subjects: list[dict] = []
+    history: list = []
+    for turn, who in enumerate(["Rachel Stein", "Rachel Stein", None, "Alex Kim",
+                                "Alex Kim"], start=1):
+        history.append(HumanMessage(f"turn {turn}"))
+        subjects = record_subject(subjects, _plan_about(who), history)
+    assert subjects == [{"turn": 1, "subject": "Rachel Stein"},
+                        {"turn": 4, "subject": "Alex Kim"}]
+
+
+def test_the_first_subject_is_stated_to_the_answering_model():
+    from novaops.agent.policy import render_subjects
+
+    text = render_subjects({"subjects": [{"turn": 1, "subject": "Rachel Stein"},
+                                         {"turn": 4, "subject": "Alex Kim"}]})
+    assert "turn 1: Rachel Stein; turn 4: Alex Kim" in text
+    assert "recorded by the application" in text
+
+
+def test_one_subject_adds_nothing_to_the_prompt():
+    from novaops.agent.policy import render_subjects
+
+    assert render_subjects({"subjects": [{"turn": 1, "subject": "Maya Cohen"}]}) == ""

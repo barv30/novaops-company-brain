@@ -187,6 +187,17 @@ class TurnPlan(BaseModel):
     requires_tools: bool = Field(
         description="False only if every fact needed is already in this conversation."
     )
+    # Required, deliberately: with `default=False` Nova left it out and "no" was recorded
+    # for "is there a laptop ready for her?" — the override never fired (ADR-027).
+    asks_record_state: bool = Field(
+        description=(
+            "True if the newest message asks what a business record says NOW: whether "
+            "something is ready, reserved, available, open, still pending, planned or "
+            "assigned — a laptop, a checklist task, a ticket, a request. False when it "
+            "asks you to write, draft, summarise or recap, or to read text the user "
+            "pasted."
+        ),
+    )
     action_confirmed: bool = Field(
         default=False,
         description=(
@@ -258,6 +269,11 @@ PLANNER_PROMPT = (
     "    * anything asking what the state is NOW — what is still open, outstanding, "
     "pending or assigned — because records change and a snapshot from an earlier turn "
     "is not the current state.\n"
+    "- asks_record_state: decide it on EVERY turn, separately from requires_tools. TRUE "
+    "for 'is there a laptop ready for her?', 'what's still open on her checklist?', 'am "
+    "I getting a laptop before the 1st?', 'what's the status of my ticket?' — even when "
+    "an earlier turn already showed that record. FALSE for 'write me the summary', 'say "
+    "that again', 'what here is mine to do?' about a pasted thread, and rule questions.\n"
     "- action_confirmed only when this message says to go ahead."
 )
 
@@ -434,9 +450,26 @@ def override_requires_tools(plan: TurnPlan, messages: list) -> str:
     "Any rule document anywhere in the thread" was tried first and is too weak: in one
     S2 run turn 6 fetched the equipment policy, the override stood down, and turn 9
     answered a spending question from it — the exact trap the prompt describes.
+
+    A second case (ADR-027): a question about what a record says NOW. "Is there a laptop
+    ready for her?" (S2 t5), "what's still open on her checklist?" (S2 t11), "am I getting
+    a laptop before the 1st?" (S9 t5) were each answered from a checklist read turns
+    earlier — on the submitted run, four of six failing traces. Records change; a read
+    from an earlier turn is a snapshot. The planner is not asked the broad "could you
+    quote it?", which it answers wrongly; it is asked the narrow `asks_record_state`, and
+    code draws the consequence. The no-lookup turns — "write me the summary" (S2 t12),
+    "what in this pasted thread is mine?" (S9 t2) — are excluded in that field's own
+    definition.
     """
 
-    if plan.requires_tools or plan.current_intent != "policy_question":
+    if plan.requires_tools:
+        return ""
+    if plan.asks_record_state:
+        return (
+            "requires_tools forced true: the message asks what a record says now, and a "
+            "record read in an earlier turn is a snapshot"
+        )
+    if plan.current_intent != "policy_question":
         return ""
     if RULE_SOURCES & _last_lookup(messages):
         return ""
@@ -456,6 +489,39 @@ def _last_lookup(messages: list) -> set[str]:
         (i for i, m in enumerate(messages[:last]) if isinstance(m, HumanMessage)), default=0
     )
     return {m.name for m in messages[start:last + 1] if isinstance(m, ToolMessage)}
+
+
+def record_subject(subjects: list[dict], plan: TurnPlan, messages: list) -> list[dict]:
+    """Append this turn's subject to the ordered list of who the conversation was about.
+
+    S3 turn 8 asks "who was the person in my very first question?" seven turns after that
+    topic was closed. The distilled memory held the fact, and the answer still named the
+    current subject on some runs: an unordered summary does not say who came FIRST.
+    Order is a fact the application already has — it saw every turn — so it is recorded
+    by code, one entry per change of subject, and stated to the model. ADR-028.
+    """
+
+    subject = (plan.subject_employee or "").strip()
+    if not subject:
+        return list(subjects)
+    if subjects and subjects[-1]["subject"].lower() == subject.lower():
+        return list(subjects)
+    turn = sum(isinstance(m, HumanMessage) for m in messages)
+    return [*subjects, {"turn": turn, "subject": subject}]
+
+
+def render_subjects(state: dict) -> str:
+    """The ordered subject list, for the answering model. Empty until there are two."""
+
+    subjects = state.get("subjects") or []
+    if len(subjects) < 2:
+        return ""
+    order = "; ".join(f"turn {s['turn']}: {s['subject']}" for s in subjects)
+    return (
+        "\n\nWHO THIS CONVERSATION HAS BEEN ABOUT, in order — recorded by the application, "
+        f"not remembered: {order}. For 'who did I ask about first', the first entry is "
+        "the answer."
+    )
 
 
 def render_caller(state: dict) -> str:

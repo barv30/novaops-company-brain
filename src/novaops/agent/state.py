@@ -57,6 +57,7 @@ class AgentState(TypedDict, total=False):
     gate_released: list[str]  # write tools actually released this turn
     handoff: dict             # Maya's typed AccessIntent, when she was asked to act
     plan_override: str        # why code overruled the planner this turn; "" when it did not
+    subjects: list[dict]      # who each change of subject was about, in order — by code
 
     # --- terminal state ---------------------------------------------------
     status: str          # exactly one Status value per run

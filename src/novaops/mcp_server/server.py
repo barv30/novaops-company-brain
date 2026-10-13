@@ -43,6 +43,7 @@ from novaops.db.connection import connect
 from novaops.identity import Caller
 from novaops.mcp_server.context import request_id_from, resolve_caller
 from novaops.retrieval.filters import visible_ids
+from novaops.retrieval.kb import troubleshooting_steps
 from novaops.retrieval.store import FaissStore, SearchHit
 from novaops.workflows.access import diagnose_access as diagnose_access_from_records
 from novaops.workflows.access import team_system_access as team_system_access_from_records
@@ -207,10 +208,18 @@ def search_knowledge_base(query: str, ctx: Context | None = None) -> list[dict]:
     Use for provisioning, login, VPN, MFA, password and licence questions — how a
     system is meant to work and what to do when it does not.
 
+    Each article result carries `steps`: its First-line Troubleshooting procedure as a
+    list. When asked how to do something, those are the steps — give each one.
+
     Args:
         query: A natural-language description of the problem or question.
     """
-    return _search(ctx, query, ["it_kb"])
+    results = _search(ctx, query, ["it_kb"])
+    for result in results:
+        steps = troubleshooting_steps(result.get("text") or "")
+        if steps:
+            result["steps"] = steps
+    return results
 
 
 @mcp.tool()

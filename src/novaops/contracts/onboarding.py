@@ -52,6 +52,14 @@ class ChecklistItem(BaseModel):
         default=None, description="Which group owns the action: UG_HR, UG_IT."
     )
     due_date: str | None = Field(default=None, description="ISO date, when the records carry one.")
+    record_status: str | None = Field(
+        default=None,
+        description=(
+            "The status exactly as the source record states it — 'planned', 'pending', "
+            "'completed'. `status` groups these for logic; this keeps the record's own "
+            "word, which is what an answer must quote."
+        ),
+    )
     citations: list[Citation] = Field(
         min_length=1,
         description="At least one source per item. An uncited item is not evidence-backed.",

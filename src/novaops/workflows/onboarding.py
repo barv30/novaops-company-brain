@@ -89,7 +89,23 @@ def _blocked_reason(
     ), citations
 
 
-def _equipment_items(connection: sqlite3.Connection, employee: dict) -> list[ChecklistItem]:
+def _preparing_task(asset_type: str, tasks: list[dict]) -> dict | None:
+    """The onboarding task that prepares this kind of hardware, if one is recorded.
+
+    OT003 is "Prepare laptop, monitor, dock, and MDM enrollment", planned for 2026-07-26;
+    A005 is the laptop it prepares. They are one fact told by two tables, and S9 turn 5 —
+    "am I getting a laptop before the 1st?" — needs both halves in one place.
+    """
+
+    word = asset_type.lower()
+    return next(
+        (t for t in tasks if word in str(t.get("description", "")).lower()), None
+    )
+
+
+def _equipment_items(
+    connection: sqlite3.Connection, employee: dict, tasks: list[dict] | None = None
+) -> list[ChecklistItem]:
     """Hardware already assigned to, or reserved for, this joiner.
 
     Reserved-but-unassigned kit is worth reporting: `A005` is a MacBook Pro sitting in
@@ -115,14 +131,31 @@ def _equipment_items(connection: sqlite3.Connection, employee: dict) -> list[Che
         # Measured on `S9` turn 5, where the answer reported "no due date specified"
         # while the date sat on the other item.
         state = "assigned" if assigned else "reserved in inventory"
+        name = f"{asset['asset_type']} {state}: {asset['model']}"
+        citations = [Citation(record=asset["asset_id"], source="database/assets")]
+        task = None if assigned else _preparing_task(str(asset["asset_type"]), tasks or [])
+        # The naming above stopped the item being mistaken for the task, but left the date
+        # on the task only, and S9 turn 5 still answered "no due date specified" three
+        # runs in three. So the reserved machine now says which task prepares it, and
+        # carries that task's date and its record status — "planned", not "pending".
+        if task:
+            name += (
+                f" — prepared under {task['task_id']}, {task['status']}, "
+                f"due {task.get('due_date')}"
+            )
+            citations.append(
+                Citation(record=task["task_id"], source="database/onboarding_tasks")
+            )
         items.append(
             ChecklistItem(
-                name=f"{asset['asset_type']} {state}: {asset['model']}",
+                name=name,
                 category="equipment",
                 status=ItemStatus.DONE if assigned else ItemStatus.PENDING,
                 blocked_reason=None,
                 owner_group="UG_IT",
-                citations=[Citation(record=asset["asset_id"], source="database/assets")],
+                due_date=task.get("due_date") if task else None,
+                record_status=str(task["status"]) if task else asset.get("status"),
+                citations=citations,
             )
         )
     return items
@@ -164,13 +197,17 @@ def build_checklist(
                 blocked_reason=reason,
                 owner_group=f"UG_{task['owner_group']}" if task.get("owner_group") else None,
                 due_date=task.get("due_date"),
+                # `status` above groups "planned" with "pending"; the record's own word is
+                # kept beside it. S9 turn 5 needs "planned" — the record says it, and an
+                # answer quoting statuses verbatim cannot quote one this code rewrote.
+                record_status=str(task["status"]),
                 citations=citations,
             )
         )
         if status is ItemStatus.BLOCKED:
             unresolved.append(f"{task['task_id']}: {reason}")
 
-    items.extend(_equipment_items(connection, employee))
+    items.extend(_equipment_items(connection, employee, tasks))
 
     # Keyed on the TASKS, not on `items`. Equipment alone can make the checklist
     # non-empty while no onboarding work is on record at all, and a checklist showing

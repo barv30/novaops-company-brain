@@ -34,22 +34,23 @@ from novaops.identity import Caller
 from novaops.mcp_server.context import CALLER_HEADER, REQUEST_HEADER
 from novaops.observability import tracing
 
-#: Distinguishes one process run from the next, so a thread id built from a case id is
-#: unique per run. Case ids repeat across runs by design — `M-I-01` is `M-I-01` every
-#: time — and a repeated thread id replays the previous run's history.
-_RUN_STAMP = uuid.uuid4().hex[:8]
-
 
 def new_thread_id(case_id: str | None = None) -> str:
-    """A thread id no previous run has used.
+    """A thread id no previous run — and no previous call — has used.
 
     The case id is kept as a prefix so a Langfuse session is still recognisable by eye
-    when matching traces to `SUBMISSION.md`; the stamp is what makes it fresh. See
-    ADR-018 — reusing a thread id across runs is the failure that reads as a broken
-    loadout and is actually stale conversation history.
+    when matching traces to `SUBMISSION.md`; the random suffix is what makes it fresh.
+    See ADR-018 — reusing a thread id is the failure that reads as a broken loadout and
+    is actually stale conversation history.
+
+    The suffix is drawn per CALL. It used to be one stamp per process, which kept ids
+    fresh across runs but not within one: `scripts/variance.py` replays a session three
+    times in one process, and its second run got the first run's thread. The freshness
+    guard refused it (ThreadNotFreshError) rather than replaying — which is how it was
+    found — but a per-process stamp was the wrong unit.
     """
 
-    return f"{case_id}:{_RUN_STAMP}" if case_id else f"thread-{uuid.uuid4().hex[:12]}"
+    return f"{case_id}:{uuid.uuid4().hex[:8]}" if case_id else f"thread-{uuid.uuid4().hex[:12]}"
 
 
 class ThreadNotFreshError(RuntimeError):

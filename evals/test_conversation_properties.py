@@ -178,19 +178,6 @@ async def test_a_closed_topic_stops_driving_the_conversation(agent):
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Known unreliable, not known broken. The mechanism is in place and verified — the "
-        "distilled memory records \"Rachel Stein's Webex licence — resolved\" and the "
-        "answering model is now given that memory, which it previously never saw. With "
-        "both, this passes on some runs and not others: the answering model sometimes "
-        "still anchors on the current subject, seven turns of which are in front of it. "
-        "Marked xfail rather than deleted or quietly skipped, because a check that "
-        "reports 'this property is not yet reliable' is worth more than one that reports "
-        "nothing. See ADR-022 on telling flaky apart from broken."
-    ),
-)
 async def test_a_durable_fact_survives_its_branch_being_closed(agent):
     """The other half, and the reason "forget it" is not the right implementation.
 
@@ -198,6 +185,12 @@ async def test_a_durable_fact_survives_its_branch_being_closed(agent):
     that branch was closed. A system that drops a resolved topic wholesale answers this
     wrongly; the distinction is between a topic that stops *driving tool choice* and a
     fact that stops *being available*.
+
+    This was marked xfail ("known unreliable, not known broken"): the distilled memory
+    held the fact, and the answering model still sometimes named the current subject — an
+    unordered summary does not say who came first. Since ADR-028 the application records
+    the order of subjects itself and states it; measured 3/3 in `scripts/variance.py S3`
+    and passing here, so the mark is removed rather than left to report XPASS.
     """
 
     results = await replay_session(agent, "S3", upto=8)
