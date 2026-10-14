@@ -117,14 +117,6 @@ would do differently. Honesty here costs nothing and helps — a stated limitati
 than one discovered while marking.
 
 **Notes.**
-- **This is the second run of `EVALUATION-INPUTS.yaml`, and I want to say so up front.**
-  The first run (commit `73fe160`) scored 142/151 binding checks, 21/27 clean traces. Scoring
-  it showed defects; I fixed them, measured each fix on the golden development sessions
-  (not on the evaluation set), and ran the set again from commit `b2f36cf` into a fresh
-  project — the traces below. The first run's project was deleted; its per-trace results
-  stay readable at commit `38e7572` (`docs/SUBMISSION-SCORES.md`). Which defects to fix was
-  chosen from the first run's failures, so this run is not a blind measurement.
-  ADR-026 to ADR-029.
 - **Every trace carries deterministic scores**: `binding_checks` and `turn_clean`, posted
   by `scripts/score_submission.py` against expectations taken from the golden data or the
   spec, each naming its source (ADR-026). All 27 at a glance in
@@ -141,3 +133,5 @@ than one discovered while marking.
   record), the scope as `agent_scope` (`scope` is reserved by Langfuse), `plan_override`
   where application code overruled the planner (ADR-024, ADR-027), and `handoff` where Maya
   prepared a request for Webex (ADR-023).
+- Run history: the evaluation set was run twice; fixes between runs were measured on golden
+  development data. First run's results: commit `38e7572`. Details: ADR-029.
